@@ -1,6 +1,4 @@
-#
-# Load common scripts.
-#
+echo "🐋 .hgpa" >&2
 
 . "${HOME}/.hgpa/prompt.zsh"
 . "${HOME}/.hgpa/git.zsh"
