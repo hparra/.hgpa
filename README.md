@@ -1,13 +1,13 @@
-# zshrc.d
+# .hgpa
 
 These are scripts that I use reguarlarly. hgpa
 
 ## Usage
 
-Place `.zshrc.d` in HOME directory.
+Place `.hgpa` in HOME directory.
 
-Add the following to [~/.zshrc](../.zshrc):
+Add the following to shell file, e.g. [~/.zshrc](../.zshrc):
 
-    source .zshrc.d/index.sh
+    source .hgpa/index.sh
 
 Alternatively, you can source individual files.

@@ -11,6 +11,11 @@ alias gl="git log"
 alias glo="git log --oneline"
 alias glg="git log --graph --oneline --decorate --all"
 
+# gbs: show brief branch status
+# - prints current branch and changes relative to the repo base (origin/HEAD or main/master)
+# - displays sections: changes from base, staged changes, unstaged changes, untracked files
+# - colored output for easier scanning
+# Usage: gbs
 gbs() {
   local reset="\033[0m" bold="\033[1m"
   local green="\033[32m" red="\033[31m" yellow="\033[33m" dim="\033[2m"
@@ -90,6 +95,30 @@ gbs() {
   unfunction _gbs_files
 }
 
+# gbd: show git diff between current branch and base branch
+# - determines base from origin/HEAD; falls back to 'main' or 'master' if needed
+# - if base cannot be determined the function exits with an error
+# - any arguments are forwarded to 'git diff' (e.g. gbd --name-only)
+# Usage: gbd [git-diff-args]
+gbd() {
+  local base
+  base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)
+  base=${base#refs/remotes/origin/}
+
+  if [[ -z "$base" ]]; then
+    for b in main master; do
+      git rev-parse --verify "$b" &>/dev/null && base="$b" && break
+    done
+  fi
+
+  if [[ -z "$base" ]]; then
+    echo "Couldn't determine base branch (origin/HEAD, main, or master)."
+    return 1
+  fi
+
+  git diff "$base"...HEAD "$@"
+}
+
 # git worktree (gw)
 alias gw="git worktree"
 alias gwl="git worktree list"
@@ -160,7 +189,7 @@ gws() {
   local input=""
   for dp in "${displays[@]}"; do
     idx=$((idx+1))
-    local p="${workpaths[$((idx-1))]}"
+    local p="${workpaths[$idx]}"
     if [ "$p" = "$cwd" ]; then
       input+="→ $idx) $dp"$'\n'
     else
@@ -181,7 +210,7 @@ gws() {
     return 1
   fi
 
-  local selpath="${workpaths[$((num-1))]}"
+  local selpath="${workpaths[$num]}"
   cd "$selpath" || echo "Failed to cd to $selpath"
 }
 
