@@ -48,6 +48,7 @@ alias gra="git rebase --abort"
 
 alias grh="git reset HEAD"
 alias grhh="git reset --hard HEAD"
+alias gtrash="git reset --hard HEAD"
 alias gclean="git clean -fd"
 
 #
