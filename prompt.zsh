@@ -11,7 +11,7 @@ zstyle ':vcs_info:*' unstagedstr '%F{yellow}*%f'
 zstyle ':vcs_info:git:*' formats       ' %F{cyan}%b%f%u%c%m'
 zstyle ':vcs_info:git:*' actionformats ' %F{cyan}%b%f%F{red}|%a%f%u%c%m'
 
-zstyle ':vcs_info:git*+set-message:*' hooks git-untracked git-aheadbehind
+zstyle ':vcs_info:git*+set-message:*' hooks git-untracked git-aheadbehind git-worktree
 
 function +vi-git-untracked() {
   if command git status --porcelain 2>/dev/null | command grep -q '^??'; then
@@ -25,6 +25,16 @@ function +vi-git-aheadbehind() {
   behind=$(command git rev-list --count HEAD..@{upstream} 2>/dev/null)
   (( ahead )) && hook_com[misc]+=" %F{green}↑${ahead}%f"
   (( behind )) && hook_com[misc]+=" %F{red}↓${behind}%f"
+  return 0
+}
+
+function +vi-git-worktree() {
+  [[ "${HGPA_SHOW_WORKTREE:-0}" == "1" ]] || return 0
+  local toplevel main_wt
+  toplevel=$(command git rev-parse --show-toplevel 2>/dev/null) || return 0
+  main_wt=$(command git worktree list 2>/dev/null | head -1 | awk '{print $1}')
+  [[ "$toplevel" == "$main_wt" ]] && return 0
+  hook_com[misc]+=" %F{magenta}⎇ ${main_wt:t}/${toplevel:t}%f"
 }
 
 add-zsh-hook precmd vcs_info
