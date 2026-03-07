@@ -8,6 +8,6 @@ Place `.hgpa` in HOME directory.
 
 Add the following to shell file, e.g. [~/.zshrc](../.zshrc):
 
-    source .hgpa/index.sh
+    source .hgpa/init.zsh
 
 Alternatively, you can source individual files.
