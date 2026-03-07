@@ -2,7 +2,6 @@ alias gs="git status --show-stash"
 alias gp="git pull"
 
 # Git aliases (hgpa)
-alias gcommit="git add . && git commit -a -F -"
 alias goops="git commit -a --amend --no-edit"
 alias greset="git reset HEAD^"
 

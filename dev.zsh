@@ -89,6 +89,13 @@ status() {
 }
 alias s=status
 
+# commit: stage all and commit with message from stdin
+# Usage: echo "msg" | commit   or   commit < message.txt
+commit() {
+  git add . && git commit -a -F -
+}
+alias c=commit
+
 # gbd: show git diff between current branch and base branch
 # - determines base from origin/HEAD; falls back to 'main' or 'master' if needed
 # - if base cannot be determined the function exits with an error
