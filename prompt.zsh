@@ -7,6 +7,12 @@ autoload -Uz add-zsh-hook
 zmodload zsh/datetime 2>/dev/null
 zstyle ':vcs_info:*' enable git
 
+# Script-level defaults. Change these to adjust behavior globally.
+typeset -gr HGPA_DEFAULT_SHOW_DIRTY=1
+typeset -gr HGPA_DEFAULT_SHOW_AHEADBEHIND=1
+typeset -gr HGPA_DEFAULT_SHOW_WORKTREE=1
+typeset -gr HGPA_DEFAULT_GIT_REFRESH_MS=1000
+
 typeset -g HGPA_LAST_SHOW_DIRTY
 HGPA_LAST_SHOW_DIRTY=''
 typeset -g HGPA_LAST_SHOW_AHEADBEHIND
@@ -25,9 +31,9 @@ zstyle ':vcs_info:git:*' formats       ' %F{cyan}%b%f%u%c%m'
 zstyle ':vcs_info:git:*' actionformats ' %F{cyan}%b%f%F{red}|%a%f%u%c%m'
 
 function hgpa-configure-vcs-info() {
-  local show_dirty="${HGPA_SHOW_DIRTY:-1}"
-  local show_aheadbehind="${HGPA_SHOW_AHEADBEHIND:-1}"
-  local show_worktree="${HGPA_SHOW_WORKTREE:-1}"
+  local show_dirty="${HGPA_SHOW_DIRTY:-$HGPA_DEFAULT_SHOW_DIRTY}"
+  local show_aheadbehind="${HGPA_SHOW_AHEADBEHIND:-$HGPA_DEFAULT_SHOW_AHEADBEHIND}"
+  local show_worktree="${HGPA_SHOW_WORKTREE:-$HGPA_DEFAULT_SHOW_WORKTREE}"
   HGPA_VCS_CONFIG_CHANGED=0
   if [[ "$show_dirty" == "$HGPA_LAST_SHOW_DIRTY" && "$show_aheadbehind" == "$HGPA_LAST_SHOW_AHEADBEHIND" && "$show_worktree" == "$HGPA_LAST_SHOW_WORKTREE" ]]; then
     return 0
@@ -57,7 +63,7 @@ function hgpa-configure-vcs-info() {
 }
 
 function +vi-git-untracked() {
-  [[ "${HGPA_SHOW_DIRTY:-1}" == "1" ]] || return 0
+  [[ "${HGPA_SHOW_DIRTY:-$HGPA_DEFAULT_SHOW_DIRTY}" == "1" ]] || return 0
   local has_untracked
   has_untracked=$(
     command git ls-files --others --exclude-standard --directory --no-empty-directory 2>/dev/null |
@@ -69,7 +75,7 @@ function +vi-git-untracked() {
 }
 
 function +vi-git-aheadbehind() {
-  [[ "${HGPA_SHOW_AHEADBEHIND:-1}" == "1" ]] || return 0
+  [[ "${HGPA_SHOW_AHEADBEHIND:-$HGPA_DEFAULT_SHOW_AHEADBEHIND}" == "1" ]] || return 0
   local repo_refs repo head upstream
   repo_refs=$(command git rev-parse --show-toplevel --verify HEAD --verify @{upstream} 2>/dev/null) || return 0
   repo=${repo_refs%%$'\n'*}
@@ -95,10 +101,11 @@ function +vi-git-aheadbehind() {
 }
 
 function +vi-git-worktree() {
-  [[ "${HGPA_SHOW_WORKTREE:-1}" == "1" ]] || return 0
-  local toplevel main_wt
+  [[ "${HGPA_SHOW_WORKTREE:-$HGPA_DEFAULT_SHOW_WORKTREE}" == "1" ]] || return 0
+  local toplevel main_wt first_line
   toplevel=$(command git rev-parse --show-toplevel 2>/dev/null) || return 0
-  main_wt=$(command git worktree list 2>/dev/null | head -1 | awk '{print $1}')
+  first_line=$(command git worktree list 2>/dev/null | command head -1) || return 0
+  main_wt="${first_line%% *}"
   [[ "$toplevel" == "$main_wt" ]] && return 0
   hook_com[misc]+=" %F{magenta}⎇ ${main_wt:t}/${toplevel:t}%f"
 }
@@ -109,7 +116,7 @@ function hgpa-vcs-precmd() {
     return 0
   fi
   hgpa-configure-vcs-info
-  local -i refresh_ms="${HGPA_GIT_REFRESH_MS:-500}"
+  local -i refresh_ms="${HGPA_GIT_REFRESH_MS:-$HGPA_DEFAULT_GIT_REFRESH_MS}"
   local -i now_ms=0
   if (( refresh_ms > 0 )) && (( HGPA_VCS_CONFIG_CHANGED == 0 )); then
     now_ms=$(( EPOCHREALTIME * 1000 ))
