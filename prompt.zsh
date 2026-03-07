@@ -8,10 +8,11 @@ zmodload zsh/datetime 2>/dev/null
 zstyle ':vcs_info:*' enable git
 
 # Script-level defaults. Change these to adjust behavior globally.
-typeset -gr HGPA_DEFAULT_SHOW_DIRTY=1
-typeset -gr HGPA_DEFAULT_SHOW_AHEADBEHIND=1
-typeset -gr HGPA_DEFAULT_SHOW_WORKTREE=1
-typeset -gr HGPA_DEFAULT_GIT_REFRESH_MS=1000
+# Only declare when unset so re-sourcing (e.g. . ~/.zshrc) doesn't hit read-only.
+(( ${+HGPA_DEFAULT_SHOW_DIRTY} )) || typeset -gr HGPA_DEFAULT_SHOW_DIRTY=1
+(( ${+HGPA_DEFAULT_SHOW_AHEADBEHIND} )) || typeset -gr HGPA_DEFAULT_SHOW_AHEADBEHIND=1
+(( ${+HGPA_DEFAULT_SHOW_WORKTREE} )) || typeset -gr HGPA_DEFAULT_SHOW_WORKTREE=1
+(( ${+HGPA_DEFAULT_GIT_REFRESH_MS} )) || typeset -gr HGPA_DEFAULT_GIT_REFRESH_MS=1000
 
 typeset -g HGPA_LAST_SHOW_DIRTY
 HGPA_LAST_SHOW_DIRTY=''
