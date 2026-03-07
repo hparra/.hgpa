@@ -66,33 +66,25 @@ gbs() {
   # -- staged --
   local staged
   staged=$(git diff --name-status --cached HEAD 2>/dev/null)
-  printf "\n${bold}Changes to be committed:${reset}\n"
-  if [[ -n "$staged" ]]; then
-    _gbs_files "$green" <<< "$staged"
-  else
-    printf "        ${dim}(none)${reset}\n"
-  fi
+  [[ -n "$staged" ]] && printf "\n${bold}Changes to be committed:${reset}\n" && _gbs_files "$green" <<< "$staged"
 
   # -- unstaged --
   local unstaged
   unstaged=$(git diff --name-status 2>/dev/null)
-  printf "\n${bold}Changes not staged for commit:${reset}\n"
-  if [[ -n "$unstaged" ]]; then
-    _gbs_files "$red" <<< "$unstaged"
-  else
-    printf "        ${dim}(none)${reset}\n"
-  fi
+  [[ -n "$unstaged" ]] && printf "\n${bold}Changes not staged for commit:${reset}\n" && _gbs_files "$red" <<< "$unstaged"
 
   # -- untracked --
   local untracked
   untracked=$(git ls-files --others --exclude-standard)
-  printf "\n${bold}Untracked files:${reset}\n"
   if [[ -n "$untracked" ]]; then
+    printf "\n${bold}Untracked files:${reset}\n"
     while IFS= read -r file; do
       printf "        ${red}%s${reset}\n" "$file"
     done <<< "$untracked"
-  else
-    printf "        ${dim}(none)${reset}\n"
+  fi
+
+  if [[ -z "$staged" && -z "$unstaged" && -z "$untracked" ]]; then
+    printf "\n${dim}nothing to commit, working tree clean${reset}\n"
   fi
 
   unfunction _gbs_files
