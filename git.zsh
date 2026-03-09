@@ -16,6 +16,81 @@ alias gwl="git worktree list"
 alias gwa="git worktree add"
 alias gwr="git worktree remove"
 
+# gwc: create a branch + worktree together
+# Usage: gwc <label> [base-branch]
+# Example: gwc docs-update
+gwc() {
+  local label="$1"
+  local base="$2"
+
+  if [[ -z "$label" ]]; then
+    echo "Usage: gwc <label> [base-branch]"
+    return 1
+  fi
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "gwc: not inside a git repository."
+    return 1
+  fi
+
+  local top repo slug suffix branch wt_name wt_path
+  top=$(git rev-parse --show-toplevel) || return 1
+  repo="${top:t}"
+
+  slug=$(printf "%s" "$label" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[ _]+/-/g; s/[^a-z0-9.-]+/-/g; s/-+/-/g; s/^-+//; s/-+$//')
+
+  if [[ -z "$slug" ]]; then
+    echo "gwc: label became empty after sanitization."
+    return 1
+  fi
+
+  if [[ -z "$base" ]]; then
+    base=$(git branch --show-current)
+  fi
+  if [[ -z "$base" ]]; then
+    base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)
+    base="${base#refs/remotes/origin/}"
+  fi
+  if [[ -z "$base" ]]; then
+    for b in main master; do
+      if git rev-parse --verify "$b" >/dev/null 2>&1; then
+        base="$b"
+        break
+      fi
+    done
+  fi
+  if [[ -z "$base" ]]; then
+    echo "gwc: couldn't determine base branch."
+    return 1
+  fi
+
+  local attempts=0
+  while :; do
+    suffix=$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 4)
+    [[ -z "$suffix" ]] && suffix="${RANDOM}"
+
+    branch="${slug}-${suffix}"
+    wt_name="${repo}--${slug}-${suffix}"
+    wt_path="${top:h}/${wt_name}"
+
+    if ! git show-ref --verify --quiet "refs/heads/$branch" && [[ ! -e "$wt_path" ]]; then
+      break
+    fi
+
+    attempts=$((attempts + 1))
+    if (( attempts > 25 )); then
+      echo "gwc: failed to generate a unique branch/worktree name."
+      return 1
+    fi
+  done
+
+  git worktree add -b "$branch" "$wt_path" "$base" || return 1
+  echo "Created worktree: $wt_path"
+  echo "Created branch:   $branch (from $base)"
+}
+
 # git branch (gb)
 alias gb="git branch"
 
