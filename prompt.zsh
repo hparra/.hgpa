@@ -108,7 +108,7 @@ function +vi-git-worktree() {
   first_line=$(command git worktree list 2>/dev/null | command head -1) || return 0
   main_wt="${first_line%% *}"
   [[ "$toplevel" == "$main_wt" ]] && return 0
-  hook_com[misc]+=" %F{magenta}⎇ ${main_wt:t}/${toplevel:t}%f"
+  hook_com[misc]+=" %F{magenta}⎇ ${main_wt:t}%f"
 }
 
 function hgpa-vcs-precmd() {
