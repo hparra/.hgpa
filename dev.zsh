@@ -85,6 +85,31 @@ status() {
     printf "\n${dim}nothing to commit, working tree clean${reset}\n"
   fi
 
+  # -- pr --
+  if [[ "$current" != "(detached HEAD)" ]] && command -v gh &>/dev/null && command -v jq &>/dev/null; then
+    local pr_json pr_number pr_state pr_reviews pr_ci ci_color rev_color
+    pr_json=$(PAGER=cat gh pr view --json number,state,reviewDecision,statusCheckRollup 2>/dev/null)
+    if [[ -n "$pr_json" ]]; then
+      pr_number=$(jq -r '.number' <<< "$pr_json")
+      pr_state=$(jq -r '.state // empty' <<< "$pr_json")
+      pr_reviews=$(jq -r '.reviewDecision // "none"' <<< "$pr_json")
+      pr_ci=$(jq -r '[.statusCheckRollup[]? | .state] | if length == 0 then "none" elif all(. == "SUCCESS") then "passing" elif any(. == "FAILURE" or . == "ERROR") then "failing" else "pending" end' <<< "$pr_json")
+
+      ci_color="$reset"
+      [[ "$pr_ci" == "passing" ]] && ci_color="$green"
+      [[ "$pr_ci" == "failing" ]] && ci_color="$red"
+      [[ "$pr_ci" == "pending" ]] && ci_color="$yellow"
+
+      rev_color="$dim"
+      [[ "$pr_reviews" == "APPROVED" ]] && rev_color="$green"
+      [[ "$pr_reviews" == "CHANGES_REQUESTED" ]] && rev_color="$red"
+
+      printf "\n${bold}Pull request #%s${reset}  %s\n" "$pr_number" "$pr_state"
+      printf "        CI: ${ci_color}%s${reset}\n" "$pr_ci"
+      printf "        reviews: ${rev_color}%s${reset}\n" "$pr_reviews"
+    fi
+  fi
+
   unfunction _gbs_files
 }
 alias s=status
