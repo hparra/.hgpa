@@ -1,5 +1,5 @@
 # dev.zsh - development-related functions and aliases
-# These are major commands that encapsulate developent lifecycle.
+# These are major commands that encapsulate development lifecycle.
 #
 # - status (s) -- super git status with branch vs base, staged/unstaged/untracked sections
 # - context (ctx) -- compact environment snapshot for agent/session context
@@ -91,7 +91,7 @@ status() {
 
   # -- staged --
   local staged
-  staged=$(git diff --name-status --cached HEAD 2>/dev/null)
+  staged=$(git diff --name-status --cached 2>/dev/null)
   [[ -n "$staged" ]] && printf "\n${bold}Changes to be committed:${reset}\n" && _gbs_files "$green" <<< "$staged"
 
   # -- unstaged --
@@ -161,7 +161,7 @@ context() {
     return 0
   fi
 
-  local repo top current base base_ref base_label staged_count unstaged_count untracked_count
+  local repo top current base base_ref staged_count unstaged_count untracked_count
   local upstream upstream_ref ahead behind up_ahead up_behind
   local worktree_main worktree_kind
   local pr_json pr_number pr_state pr_reviews pr_ci pr_url ci_color rev_color
@@ -179,10 +179,9 @@ context() {
   fi
 
   base=$(_hgpa_git_base_ref)
-  base_label="${base#origin/}"
   [[ -n "$base" ]] && base_ref="$base" || base_ref="(unknown)"
 
-  staged_count=$(git diff --name-only --cached HEAD 2>/dev/null | wc -l | tr -d ' ')
+  staged_count=$(git diff --name-only --cached 2>/dev/null | wc -l | tr -d ' ')
   unstaged_count=$(git diff --name-only 2>/dev/null | wc -l | tr -d ' ')
   untracked_count=$(git ls-files --others --exclude-standard | wc -l | tr -d ' ')
 
