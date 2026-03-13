@@ -115,13 +115,14 @@ status() {
 
   # -- pr --
   if [[ "$current" != "(detached HEAD)" ]] && command -v gh &>/dev/null && command -v jq &>/dev/null; then
-    local pr_json pr_number pr_state pr_reviews pr_ci ci_color rev_color
-    pr_json=$(PAGER=cat gh pr view --json number,state,reviewDecision,statusCheckRollup 2>/dev/null)
+    local pr_json pr_number pr_state pr_reviews pr_ci pr_url ci_color rev_color
+    pr_json=$(PAGER=cat gh pr view --json number,state,reviewDecision,statusCheckRollup,url 2>/dev/null)
     if [[ -n "$pr_json" ]]; then
       pr_number=$(jq -r '.number' <<< "$pr_json")
       pr_state=$(jq -r '.state // empty' <<< "$pr_json")
       pr_reviews=$(jq -r '.reviewDecision // "none"' <<< "$pr_json")
       pr_ci=$(jq -r '[.statusCheckRollup[]? | .state] | if length == 0 then "none" elif all(. == "SUCCESS") then "passing" elif any(. == "FAILURE" or . == "ERROR") then "failing" else "pending" end' <<< "$pr_json")
+      pr_url=$(jq -r '.url // empty' <<< "$pr_json")
 
       ci_color="$reset"
       [[ "$pr_ci" == "passing" ]] && ci_color="$green"
@@ -133,6 +134,7 @@ status() {
       [[ "$pr_reviews" == "CHANGES_REQUESTED" ]] && rev_color="$red"
 
       printf "\n${bold}Pull request #%s${reset}  %s\n" "$pr_number" "$pr_state"
+      [[ -n "$pr_url" ]] && printf "        link: %s\n" "$pr_url"
       printf "        CI: ${ci_color}%s${reset}\n" "$pr_ci"
       printf "        reviews: ${rev_color}%s${reset}\n" "$pr_reviews"
     fi
@@ -162,7 +164,7 @@ context() {
   local repo top current base base_ref base_label staged_count unstaged_count untracked_count
   local upstream upstream_ref ahead behind up_ahead up_behind
   local worktree_main worktree_kind
-  local pr_json pr_number pr_state pr_reviews pr_ci ci_color rev_color
+  local pr_json pr_number pr_state pr_reviews pr_ci pr_url ci_color rev_color
 
   top=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
   repo="${top:t}"
@@ -211,12 +213,13 @@ context() {
   fi
 
   if [[ "$current" != "(detached HEAD)" ]] && command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-    pr_json=$(PAGER=cat gh pr view --json number,state,reviewDecision,statusCheckRollup 2>/dev/null)
+    pr_json=$(PAGER=cat gh pr view --json number,state,reviewDecision,statusCheckRollup,url 2>/dev/null)
     if [[ -n "$pr_json" ]]; then
       pr_number=$(jq -r '.number' <<< "$pr_json")
       pr_state=$(jq -r '.state // empty' <<< "$pr_json")
       pr_reviews=$(jq -r '.reviewDecision // "none"' <<< "$pr_json")
       pr_ci=$(jq -r '[.statusCheckRollup[]? | .state] | if length == 0 then "none" elif all(. == "SUCCESS") then "passing" elif any(. == "FAILURE" or . == "ERROR") then "failing" else "pending" end' <<< "$pr_json")
+      pr_url=$(jq -r '.url // empty' <<< "$pr_json")
 
       ci_color="$reset"
       [[ "$pr_ci" == "passing" ]] && ci_color="$green"
@@ -228,6 +231,7 @@ context() {
       [[ "$pr_reviews" == "CHANGES_REQUESTED" ]] && rev_color="$red"
 
       printf "  ${bold}pr:${reset} #%s %s\n" "$pr_number" "$pr_state"
+      [[ -n "$pr_url" ]] && printf "  ${bold}pr link:${reset} %s\n" "$pr_url"
       printf "  ${bold}ci:${reset} ${ci_color}%s${reset}\n" "$pr_ci"
       printf "  ${bold}reviews:${reset} ${rev_color}%s${reset}\n" "$pr_reviews"
     else
