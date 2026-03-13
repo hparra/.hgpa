@@ -23,6 +23,44 @@ _hgpa_git_base_ref() {
   done
 }
 
+_hgpa_pr_thread_summary() {
+  local pr_number="$1"
+  local query response
+  [[ -z "$pr_number" ]] && return 0
+
+  read -r -d '' query <<EOF
+query {
+  repository(owner: "hparra", name: ".hgpa") {
+    pullRequest(number: $pr_number) {
+      reviewThreads(first: 50) {
+        nodes {
+          isResolved
+          comments(first: 1) {
+            nodes {
+              author { login }
+              path
+            }
+          }
+        }
+      }
+    }
+  }
+}
+EOF
+
+  response=$(gh api graphql -f query="$query" 2>/dev/null) || return 0
+  jq -r '
+    (.data.repository.pullRequest.reviewThreads.nodes // []) as $threads
+    | ($threads | map(select(.isResolved == false)) | length) as $unresolved
+    | ($threads | map(select(.isResolved == true)) | length) as $resolved
+    | if ($unresolved + $resolved) == 0 then
+        empty
+      else
+        "\($unresolved) unresolved, \($resolved) resolved"
+      end
+  ' <<< "$response" 2>/dev/null
+}
+
 # status: show status of the repository including git
 # - prints current branch and changes relative to the repo base (prefer origin/*, then local fallback)
 # - displays sections: changes from base, staged changes, unstaged changes, untracked files
@@ -115,7 +153,7 @@ status() {
 
   # -- pr --
   if [[ "$current" != "(detached HEAD)" ]] && command -v gh &>/dev/null && command -v jq &>/dev/null; then
-    local pr_json pr_number pr_state pr_reviews pr_ci pr_url ci_color rev_color
+    local pr_json pr_number pr_state pr_reviews pr_ci pr_url pr_threads ci_color rev_color
     pr_json=$(PAGER=cat gh pr view --json number,state,reviewDecision,statusCheckRollup,url 2>/dev/null)
     if [[ -n "$pr_json" ]]; then
       pr_number=$(jq -r '.number' <<< "$pr_json")
@@ -123,6 +161,7 @@ status() {
       pr_reviews=$(jq -r '.reviewDecision // "none"' <<< "$pr_json")
       pr_ci=$(jq -r '[.statusCheckRollup[]? | .state] | if length == 0 then "none" elif all(. == "SUCCESS") then "passing" elif any(. == "FAILURE" or . == "ERROR") then "failing" else "pending" end' <<< "$pr_json")
       pr_url=$(jq -r '.url // empty' <<< "$pr_json")
+      pr_threads=$(_hgpa_pr_thread_summary "$pr_number")
 
       ci_color="$reset"
       [[ "$pr_ci" == "passing" ]] && ci_color="$green"
@@ -137,6 +176,7 @@ status() {
       [[ -n "$pr_url" ]] && printf "        link: %s\n" "$pr_url"
       printf "        CI: ${ci_color}%s${reset}\n" "$pr_ci"
       printf "        reviews: ${rev_color}%s${reset}\n" "$pr_reviews"
+      [[ -n "$pr_threads" ]] && printf "        threads: %s\n" "$pr_threads"
     fi
   fi
 
