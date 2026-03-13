@@ -25,12 +25,19 @@ _hgpa_git_base_ref() {
 
 _hgpa_pr_thread_summary() {
   local pr_number="$1"
-  local query response
-  [[ -z "$pr_number" ]] && return 0
+  local pr_url="$2"
+  local query response repo_path owner repo
+  [[ -z "$pr_number" || -z "$pr_url" ]] && return 0
+
+  repo_path="${pr_url#https://github.com/}"
+  repo_path="${repo_path%%/pull/*}"
+  owner="${repo_path%%/*}"
+  repo="${repo_path#*/}"
+  [[ -z "$owner" || -z "$repo" || "$owner" == "$repo_path" ]] && return 0
 
   read -r -d '' query <<EOF
 query {
-  repository(owner: "hparra", name: ".hgpa") {
+  repository(owner: "$owner", name: "$repo") {
     pullRequest(number: $pr_number) {
       reviewThreads(first: 50) {
         nodes {
@@ -88,6 +95,10 @@ status() {
   }
 
   local no_commits=0
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf "${bold}status${reset} ${dim}not a git repository${reset}\n"
+    return 0
+  fi
   git rev-parse HEAD &>/dev/null || no_commits=1
 
   local current top repo worktree_main worktree_kind
@@ -161,7 +172,7 @@ status() {
       pr_reviews=$(jq -r '.reviewDecision // "none"' <<< "$pr_json")
       pr_ci=$(jq -r '[.statusCheckRollup[]? | .state] | if length == 0 then "none" elif all(. == "SUCCESS") then "passing" elif any(. == "FAILURE" or . == "ERROR") then "failing" else "pending" end' <<< "$pr_json")
       pr_url=$(jq -r '.url // empty' <<< "$pr_json")
-      pr_threads=$(_hgpa_pr_thread_summary "$pr_number")
+      pr_threads=$(_hgpa_pr_thread_summary "$pr_number" "$pr_url")
 
       ci_color="$reset"
       [[ "$pr_ci" == "passing" ]] && ci_color="$green"
