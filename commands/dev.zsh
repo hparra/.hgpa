@@ -164,7 +164,8 @@ status() {
 
   # -- pr --
   if [[ "$current" != "(detached HEAD)" ]] && command -v gh &>/dev/null && command -v jq &>/dev/null; then
-    local pr_json pr_number pr_state pr_reviews pr_ci pr_url pr_threads ci_color rev_color
+    local pr_json pr_number pr_state pr_reviews pr_ci pr_url pr_threads ci_color rev_color thread_color
+    local unresolved_threads resolved_threads
     pr_json=$(PAGER=cat gh pr view --json number,state,reviewDecision,statusCheckRollup,url 2>/dev/null)
     if [[ -n "$pr_json" ]]; then
       pr_number=$(jq -r '.number' <<< "$pr_json")
@@ -182,12 +183,28 @@ status() {
       rev_color="$dim"
       [[ "$pr_reviews" == "APPROVED" ]] && rev_color="$green"
       [[ "$pr_reviews" == "CHANGES_REQUESTED" ]] && rev_color="$red"
+      [[ "$pr_reviews" == "REVIEW_REQUIRED" || "$pr_reviews" == "COMMENTED" ]] && rev_color="$yellow"
+
+      thread_color="$dim"
+      if [[ -n "$pr_threads" ]]; then
+        unresolved_threads="${pr_threads%% unresolved,*}"
+        resolved_threads="${pr_threads#*, }"
+        resolved_threads="${resolved_threads%% resolved*}"
+        [[ "$unresolved_threads" != "$pr_threads" ]] || unresolved_threads="0"
+        [[ "$resolved_threads" != "$pr_threads" ]] || resolved_threads="0"
+
+        if [[ "${unresolved_threads:-0}" -gt 0 ]]; then
+          thread_color="$yellow"
+        elif [[ "${resolved_threads:-0}" -gt 0 ]]; then
+          thread_color="$green"
+        fi
+      fi
 
       printf "\n${bold}Pull request #%s${reset}  %s\n" "$pr_number" "$pr_state"
       [[ -n "$pr_url" ]] && printf "        link: %s\n" "$pr_url"
       printf "        CI: ${ci_color}%s${reset}\n" "$pr_ci"
       printf "        reviews: ${rev_color}%s${reset}\n" "$pr_reviews"
-      [[ -n "$pr_threads" ]] && printf "        threads: %s\n" "$pr_threads"
+      [[ -n "$pr_threads" ]] && printf "        threads: ${thread_color}%s${reset}\n" "$pr_threads"
     fi
   fi
 
