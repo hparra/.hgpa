@@ -6,8 +6,25 @@
 # - gws -- git worktree switcher with fzf
 # - commit (c)
 
+_hgpa_git_base_ref() {
+  local ref=""
+  ref=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null) || true
+  if [[ -n "$ref" ]]; then
+    printf "%s\n" "${ref#refs/remotes/}"
+    return 0
+  fi
+
+  for ref in origin/main origin/master; do
+    git rev-parse --verify "$ref" >/dev/null 2>&1 && printf "%s\n" "$ref" && return 0
+  done
+
+  for ref in main master; do
+    git rev-parse --verify "$ref" >/dev/null 2>&1 && printf "%s\n" "$ref" && return 0
+  done
+}
+
 # status: show status of the repository including git
-# - prints current branch and changes relative to the repo base (origin/HEAD or main/master)
+# - prints current branch and changes relative to the repo base (prefer origin/*, then local fallback)
 # - displays sections: changes from base, staged changes, unstaged changes, untracked files
 # - colored output for easier scanning
 status() {
@@ -54,19 +71,14 @@ status() {
     [[ "$worktree_kind" == "linked" ]] && printf "        ${dim}main tree: %s${reset}\n" "${worktree_main/#$HOME/~}"
   fi
 
-  local base=""
+  local base="" base_label=""
   if (( !no_commits )); then
-    base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)
-    base=${base#refs/remotes/origin/}
-    if [[ -z "$base" ]]; then
-      for b in main master; do
-        git rev-parse --verify "$b" &>/dev/null && base="$b" && break
-      done
-    fi
+    base=$(_hgpa_git_base_ref)
+    base_label="${base#origin/}"
   fi
 
   # -- branch vs base --
-  if (( !no_commits )) && [[ -n "$base" ]] && [[ "$current" != "$base" ]]; then
+  if (( !no_commits )) && [[ -n "$base" ]] && [[ "$current" != "$base_label" ]]; then
     local branch_files
     branch_files=$(git diff --name-status "$base"...HEAD)
     printf "\n${bold}Changes from %s:${reset}\n" "$base"
@@ -147,7 +159,7 @@ context() {
     return 0
   fi
 
-  local repo top current base base_ref staged_count unstaged_count untracked_count
+  local repo top current base base_ref base_label staged_count unstaged_count untracked_count
   local upstream upstream_ref ahead behind up_ahead up_behind
   local worktree_main worktree_kind
   local pr_json pr_number pr_state pr_reviews pr_ci ci_color rev_color
@@ -164,14 +176,9 @@ context() {
     fi
   fi
 
-  base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)
-  base=${base#refs/remotes/origin/}
-  if [[ -z "$base" ]]; then
-    for b in main master; do
-      git rev-parse --verify "$b" >/dev/null 2>&1 && base="$b" && break
-    done
-  fi
-  [[ -n "$base" ]] && base_ref="origin/$base" || base_ref="(unknown)"
+  base=$(_hgpa_git_base_ref)
+  base_label="${base#origin/}"
+  [[ -n "$base" ]] && base_ref="$base" || base_ref="(unknown)"
 
   staged_count=$(git diff --name-only --cached HEAD 2>/dev/null | wc -l | tr -d ' ')
   unstaged_count=$(git diff --name-only 2>/dev/null | wc -l | tr -d ' ')
@@ -187,7 +194,7 @@ context() {
 
   if [[ -n "$base" ]] && [[ "$current" != "(detached HEAD)" ]]; then
     read -r behind ahead <<<"$(git rev-list --left-right --count "$base"...HEAD 2>/dev/null)"
-    printf "  ${bold}branch diff:${reset} ahead %s, behind %s vs %s\n" "${ahead:-0}" "${behind:-0}" "$base"
+    printf "  ${bold}branch diff:${reset} ahead %s, behind %s vs %s\n" "${ahead:-0}" "${behind:-0}" "$base_ref"
   fi
 
   printf "  ${bold}changes:${reset} staged %s, unstaged %s, untracked %s\n" \
@@ -238,23 +245,16 @@ commit() {
 alias c=commit
 
 # gbd: show git diff between current branch and base branch
-# - determines base from origin/HEAD; falls back to 'main' or 'master' if needed
+# - determines base from origin/HEAD, origin/main, origin/master, then local fallback
 # - if base cannot be determined the function exits with an error
 # - any arguments are forwarded to 'git diff' (e.g. gbd --name-only)
 # Usage: gbd [git-diff-args]
 gbd() {
   local base
-  base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)
-  base=${base#refs/remotes/origin/}
+  base=$(_hgpa_git_base_ref)
 
   if [[ -z "$base" ]]; then
-    for b in main master; do
-      git rev-parse --verify "$b" &>/dev/null && base="$b" && break
-    done
-  fi
-
-  if [[ -z "$base" ]]; then
-    echo "Couldn't determine base branch (origin/HEAD, main, or master)."
+    echo "Couldn't determine base branch (origin/HEAD, origin/main, origin/master, main, or master)."
     return 1
   fi
 
