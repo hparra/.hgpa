@@ -134,4 +134,4 @@ function hgpa-vcs-precmd() {
 
 add-zsh-hook precmd hgpa-vcs-precmd
 setopt PROMPT_SUBST
-PROMPT='%F{blue}%1~%f${vcs_info_msg_0_} %F{magenta}%#%f '
+PROMPT='🐋 %F{blue}%1~%f${vcs_info_msg_0_} %F{magenta}%#%f '
