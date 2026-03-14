@@ -18,6 +18,7 @@ Alternatively, you can source individual files.
 ## Commands
 
 - `status` (`s`) is the primary re-entry command: repo, branch, worktree, local changes, and PR status
+- `copilotwait` (`cw`) polls the current PR until a Copilot review/comment appears or a timeout is reached
 - `context` (`ctx`) prints a compact environment snapshot for agents or handoff-style metadata
 
 ## Shortcuts
@@ -30,4 +31,7 @@ s
 
 # compact metadata snapshot for agent/handoff context
 ctx
+
+# wait for Copilot review output on the current PR
+cw
 ```
