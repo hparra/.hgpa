@@ -1,6 +1,11 @@
 zmodload zsh/datetime
 _hgpa_start=${EPOCHREALTIME}
 
+# Keep shell line editing in Emacs mode. This is separate from EDITOR/VISUAL:
+# those choose which full-screen editor tools launch, while bindkey controls
+# prompt editing keys like Ctrl-A, Ctrl-E, and Backspace.
+bindkey -e
+
 for f in "${HOME}"/.hgpa/shell/**/*.zsh(N); do
   local name="${f:t}"
   [[ "$name" == "init.zsh" || "$name" == "nvm-quick.zsh" ]] && continue

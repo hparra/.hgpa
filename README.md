@@ -1,12 +1,36 @@
 # .hgpa
 
-## Usage
+## Setup
 
-Place `.hgpa` in HOME directory.
+```sh
+# clone .hgpa in HOME directory:
+git clone https://github.com/hparra/.hgpa.git ~/.hgpa
 
-Add the following to shell file, e.g. [~/.zshrc](../.zshrc):
+# add source init to [~/.zshrc](../.zshrc):
+echo '\n. ~/.hgpa/shell/init.zsh' >> ~/.zshrc
 
-    source .hgpa/shell/init.zsh
+# start a new shell session, or source the init file:
+source ~/.hgpa/shell/init.zsh
+```
+
+## Machine-specific environment (`~/.zshenv`)
+
+`~/.zshenv` is sourced on every shell invocation and is the right place for variables that are specific to a machine or context (home, work, etc.). It is not tracked in this repo.
+
+```sh
+# Identity — may differ between home and work machines
+export NAME="Your Name"
+export EMAIL="you@example.com"
+
+# Git identity
+export GIT_AUTHOR_NAME="$NAME"
+export GIT_AUTHOR_EMAIL="$EMAIL"
+export GIT_COMMITTER_NAME="$NAME"
+export GIT_COMMITTER_EMAIL="$EMAIL"
+
+# PATH additions specific to this machine
+export PATH="${HOME}/.local/bin:${PATH}"
+```
 
 ## Layout
 
