@@ -34,4 +34,14 @@ ctx
 
 # wait for Copilot review output on the current PR
 cw
+
+# inspect tool/app install state
+./setup/cli.zsh
+./setup/apps.zsh
+
+# apply macOS defaults
+./setup/macos.zsh
+
+# run the full setup flow
+./setup/init.zsh
 ```
