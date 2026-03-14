@@ -122,6 +122,119 @@ EOF
   ' <<< "$response" 2>/dev/null
 }
 
+_hgpa_pr_thread_counts() {
+  local pr_number="$1"
+  local pr_url="$2"
+  local query response repo_path owner repo
+  [[ -z "$pr_number" || -z "$pr_url" ]] && return 1
+
+  repo_path="${pr_url#https://github.com/}"
+  repo_path="${repo_path%%/pull/*}"
+  owner="${repo_path%%/*}"
+  repo="${repo_path#*/}"
+  [[ -z "$owner" || -z "$repo" || "$owner" == "$repo_path" ]] && return 1
+
+  read -r -d '' query <<EOF
+query {
+  repository(owner: "$owner", name: "$repo") {
+    pullRequest(number: $pr_number) {
+      reviewThreads(first: 50) {
+        nodes {
+          isResolved
+        }
+      }
+    }
+  }
+}
+EOF
+
+  response=$(gh api graphql -f query="$query" 2>/dev/null) || return 1
+  jq -r '
+    (.data.repository.pullRequest.reviewThreads.nodes // []) as $threads
+    | ($threads | map(select(.isResolved == false)) | length) as $unresolved
+    | ($threads | map(select(.isResolved == true)) | length) as $resolved
+    | "\($unresolved) \($resolved)"
+  ' <<< "$response" 2>/dev/null
+}
+
+_hgpa_copilot_review_ready() {
+  local pr_ref="${1:-}"
+  local pattern="${HGPA_COPILOT_LOGIN_PATTERN:-copilot|github-copilot}"
+  local pr_json=""
+
+  pr_json=$(PAGER=cat gh pr view ${pr_ref:+$pr_ref} --json number,reviews,comments,url 2>/dev/null) || return 1
+
+  jq -e --arg pattern "$pattern" '
+    def is_copilot:
+      (.author.login // "")
+      | ascii_downcase
+      | test($pattern; "i");
+    ([.reviews[]? | select(is_copilot)] | length) > 0
+    or ([.comments[]? | select(is_copilot)] | length) > 0
+  ' <<< "$pr_json" >/dev/null 2>&1
+}
+
+# wait for a Copilot review/comment to land on a PR
+# Usage: copilotwait [pr-number-or-url]
+copilotwait() {
+  local pr_ref="${1:-}"
+  local timeout="${HGPA_COPILOT_WAIT_TIMEOUT:-600}"
+  local interval="${HGPA_COPILOT_WAIT_INTERVAL:-15}"
+  local elapsed=0
+  local pr_json pr_number pr_url review_decision
+  local unresolved_threads=0 resolved_threads=0
+
+  if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    echo "copilotwait requires both gh and jq."
+    return 1
+  fi
+
+  pr_json=$(PAGER=cat gh pr view ${pr_ref:+$pr_ref} --json number,url,reviewDecision 2>/dev/null) || {
+    echo "Couldn't resolve a pull request to watch."
+    return 1
+  }
+
+  pr_number=$(jq -r '.number // empty' <<< "$pr_json")
+  pr_url=$(jq -r '.url // empty' <<< "$pr_json")
+  review_decision=$(jq -r 'if (.reviewDecision // "") == "" then "none" else .reviewDecision end' <<< "$pr_json")
+
+  [[ -n "$pr_number" ]] && echo "Watching PR #$pr_number for a Copilot review..."
+  [[ -n "$pr_url" ]] && echo "$pr_url"
+
+  while (( elapsed <= timeout )); do
+    if _hgpa_copilot_review_ready "$pr_ref"; then
+      echo "Copilot review detected."
+      pr_json=$(PAGER=cat gh pr view ${pr_ref:+$pr_ref} --json number,url,reviewDecision 2>/dev/null || true)
+      review_decision=$(jq -r 'if (.reviewDecision // "") == "" then "none" else .reviewDecision end' <<< "$pr_json" 2>/dev/null)
+
+      if read -r unresolved_threads resolved_threads <<< "$(_hgpa_pr_thread_counts "$pr_number" "$pr_url" 2>/dev/null)"; then
+        printf "Threads: %s unresolved, %s resolved\n" "${unresolved_threads:-0}" "${resolved_threads:-0}"
+      fi
+
+      printf "Review decision: %s\n" "$review_decision"
+
+      if [[ "${unresolved_threads:-0}" -gt 0 ]]; then
+        echo "Next step: address review threads."
+        return 10
+      fi
+
+      echo "Review is clear."
+      return 0
+    fi
+
+    if (( elapsed == timeout )); then
+      break
+    fi
+
+    printf "No Copilot review yet. Checked at %ss, retrying in %ss...\n" "$elapsed" "$interval"
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
+
+  echo "Timed out after ${timeout}s without a Copilot review."
+  return 2
+}
+
 # status: show status of the repository including git
 # - prints current branch and changes relative to the repo base (prefer origin/*, then local fallback)
 # - displays sections: changes from base, staged changes, unstaged changes, untracked files
@@ -265,6 +378,7 @@ status() {
   unfunction _gbs_files
 }
 alias s=status
+alias cw=copilotwait
 
 # context: print a compact environment snapshot for humans and agents
 # - includes time, user, current directory, and git metadata when available
