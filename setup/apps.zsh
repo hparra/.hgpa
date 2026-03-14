@@ -50,3 +50,44 @@ else
   echo "installing antigravity" >&2
   brew install --cask antigravity
 fi
+
+if [[ -d "/Applications/Ghostty.app" || -d "$HOME/Applications/Ghostty.app" ]]; then
+  echo "ghostty: installed"
+  if ! command -v ghostty >/dev/null 2>&1; then
+    echo "ghostty cli: missing"
+  fi
+else
+  echo "installing ghostty" >&2
+  brew install --cask ghostty
+fi
+
+if [[ -d "/Applications/Handy.app" || -d "$HOME/Applications/Handy.app" ]]; then
+  echo "handy: installed"
+else
+  echo "installing handy" >&2
+  brew install --cask handy
+fi
+
+if [[ -d "/Applications/Zed.app" || -d "$HOME/Applications/Zed.app" ]]; then
+  echo "zed: installed"
+  if ! command -v zed >/dev/null 2>&1; then
+    echo "zed cli: missing"
+  fi
+else
+  echo "installing zed" >&2
+  brew install --cask zed
+fi
+
+if [[ -d "/Applications/Slack.app" || -d "$HOME/Applications/Slack.app" ]]; then
+  echo "slack: installed"
+else
+  echo "installing slack" >&2
+  brew install --cask slack
+fi
+
+if [[ -d "/Applications/Spotify.app" || -d "$HOME/Applications/Spotify.app" ]]; then
+  echo "spotify: installed"
+else
+  echo "installing spotify" >&2
+  brew install --cask spotify
+fi
