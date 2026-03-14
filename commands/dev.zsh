@@ -6,7 +6,7 @@
 # - gws -- git worktree switcher with fzf
 # - commit (c)
 
-_hgpa_git_base_ref() {
+_hgpa_git_default_base_ref() {
   local ref=""
   ref=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null) || true
   if [[ -n "$ref" ]]; then
@@ -21,6 +21,60 @@ _hgpa_git_base_ref() {
   for ref in main master; do
     git rev-parse --verify "$ref" >/dev/null 2>&1 && printf "%s\n" "$ref" && return 0
   done
+}
+
+_hgpa_git_resolve_base_ref() {
+  local ref="$1"
+  [[ -z "$ref" ]] && return 1
+
+  case "$ref" in
+    refs/heads/*)
+      ref="${ref#refs/heads/}"
+      ;;
+    refs/remotes/*)
+      printf "%s\n" "${ref#refs/remotes/}"
+      return 0
+      ;;
+  esac
+
+  if git rev-parse --verify "$ref" >/dev/null 2>&1; then
+    printf "%s\n" "$ref"
+    return 0
+  fi
+
+  if git rev-parse --verify "origin/$ref" >/dev/null 2>&1; then
+    printf "%s\n" "origin/$ref"
+    return 0
+  fi
+
+  return 1
+}
+
+_hgpa_git_base_ref() {
+  local current explicit merge_ref created_from fallback
+  current=$(git symbolic-ref --short HEAD 2>/dev/null || true)
+  [[ -z "$current" ]] && _hgpa_git_default_base_ref && return 0
+
+  explicit=$(git config --get "branch.$current.gh-merge-base" 2>/dev/null || true)
+  if [[ -n "$explicit" ]]; then
+    _hgpa_git_resolve_base_ref "$explicit" && return 0
+  fi
+
+  merge_ref=$(git config --get "branch.$current.merge" 2>/dev/null || true)
+  if [[ -n "$merge_ref" && "$merge_ref" != "refs/heads/$current" ]]; then
+    _hgpa_git_resolve_base_ref "$merge_ref" && return 0
+  fi
+
+  created_from=$(git reflog show --format='%gs' "refs/heads/$current" 2>/dev/null | tail -n 1)
+  if [[ "$created_from" == branch:\ Created\ from\ * ]]; then
+    created_from="${created_from#branch: Created from }"
+    if [[ "$created_from" != "HEAD" ]]; then
+      _hgpa_git_resolve_base_ref "$created_from" && return 0
+    fi
+  fi
+
+  fallback=$(_hgpa_git_default_base_ref 2>/dev/null || true)
+  [[ -n "$fallback" ]] && printf "%s\n" "$fallback"
 }
 
 _hgpa_pr_thread_summary() {
@@ -316,7 +370,7 @@ commit() {
 alias c=commit
 
 # gbd: show git diff between current branch and base branch
-# - determines base from origin/HEAD, origin/main, origin/master, then local fallback
+# - determines base from explicit branch metadata, branch merge config, creation reflog, then default branch fallback
 # - if base cannot be determined the function exits with an error
 # - any arguments are forwarded to 'git diff' (e.g. gbd --name-only)
 # Usage: gbd [git-diff-args]
@@ -325,7 +379,7 @@ gbd() {
   base=$(_hgpa_git_base_ref)
 
   if [[ -z "$base" ]]; then
-    echo "Couldn't determine base branch (origin/HEAD, origin/main, origin/master, main, or master)."
+    echo "Couldn't determine a base branch from metadata, branch history, or the repo default branch."
     return 1
   fi
 
