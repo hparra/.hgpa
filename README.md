@@ -13,6 +13,25 @@ Add the following to shell file, e.g. [~/.zshrc](../.zshrc):
 - `shell/` contains environment and bootstrap files that are sourced into the shell session
 - `commands/` contains command-oriented aliases and functions
 
+### Organizing commands
+
+You do **not** need one file per command.
+
+A practical pattern is:
+
+- keep one file per domain (`git`, `dev`, `aliases`, `docker`, `k8s`, etc.)
+- group tiny aliases together in shared files
+- keep larger shell functions in domain files, with a short header comment per function
+- only split to one-command-per-file when a function becomes long, has tests/docs, or has collaborators
+
+`shell/init.zsh` already autoloads everything under `commands/**/*.zsh`, so the collection strategy is simply:
+
+1. create a domain file in `commands/`
+2. drop aliases/functions into that file
+3. source `.hgpa/shell/init.zsh` (or restart shell)
+
+If load order ever matters, use filename prefixes (for example `00-core.zsh`, `10-git.zsh`, `20-dev.zsh`) so glob ordering stays predictable.
+
 Alternatively, you can source individual files.
 
 ## Commands
