@@ -1,12 +1,75 @@
 # dev.zsh - development-related functions and aliases
-# These are major commands that encapsulate developent lifecycle.
+# These are major commands that encapsulate development lifecycle.
 #
 # - status (s) -- super git status with branch vs base, staged/unstaged/untracked sections
+# - context (ctx) -- compact environment snapshot for agent/session context
 # - gws -- git worktree switcher with fzf
 # - commit (c)
 
+_hgpa_git_base_ref() {
+  local ref=""
+  ref=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null) || true
+  if [[ -n "$ref" ]]; then
+    printf "%s\n" "${ref#refs/remotes/}"
+    return 0
+  fi
+
+  for ref in origin/main origin/master; do
+    git rev-parse --verify "$ref" >/dev/null 2>&1 && printf "%s\n" "$ref" && return 0
+  done
+
+  for ref in main master; do
+    git rev-parse --verify "$ref" >/dev/null 2>&1 && printf "%s\n" "$ref" && return 0
+  done
+}
+
+_hgpa_pr_thread_summary() {
+  local pr_number="$1"
+  local pr_url="$2"
+  local query response repo_path owner repo
+  [[ -z "$pr_number" || -z "$pr_url" ]] && return 0
+
+  repo_path="${pr_url#https://github.com/}"
+  repo_path="${repo_path%%/pull/*}"
+  owner="${repo_path%%/*}"
+  repo="${repo_path#*/}"
+  [[ -z "$owner" || -z "$repo" || "$owner" == "$repo_path" ]] && return 0
+
+  read -r -d '' query <<EOF
+query {
+  repository(owner: "$owner", name: "$repo") {
+    pullRequest(number: $pr_number) {
+      reviewThreads(first: 50) {
+        nodes {
+          isResolved
+          comments(first: 1) {
+            nodes {
+              author { login }
+              path
+            }
+          }
+        }
+      }
+    }
+  }
+}
+EOF
+
+  response=$(gh api graphql -f query="$query" 2>/dev/null) || return 0
+  jq -r '
+    (.data.repository.pullRequest.reviewThreads.nodes // []) as $threads
+    | ($threads | map(select(.isResolved == false)) | length) as $unresolved
+    | ($threads | map(select(.isResolved == true)) | length) as $resolved
+    | if ($unresolved + $resolved) == 0 then
+        empty
+      else
+        "\($unresolved) unresolved, \($resolved) resolved"
+      end
+  ' <<< "$response" 2>/dev/null
+}
+
 # status: show status of the repository including git
-# - prints current branch and changes relative to the repo base (origin/HEAD or main/master)
+# - prints current branch and changes relative to the repo base (prefer origin/*, then local fallback)
 # - displays sections: changes from base, staged changes, unstaged changes, untracked files
 # - colored output for easier scanning
 status() {
@@ -32,25 +95,39 @@ status() {
   }
 
   local no_commits=0
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf "${bold}status${reset} ${dim}not a git repository${reset}\n"
+    return 0
+  fi
   git rev-parse HEAD &>/dev/null || no_commits=1
 
-  local current
+  local current top repo worktree_main worktree_kind
+  top=$(git rev-parse --show-toplevel 2>/dev/null)
+  repo="${top:t}"
   current=$(git symbolic-ref --short HEAD 2>/dev/null || echo "(detached HEAD)")
-  printf "${bold}On branch %s${reset}\n" "$current"
-
-  local base=""
-  if (( !no_commits )); then
-    base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)
-    base=${base#refs/remotes/origin/}
-    if [[ -z "$base" ]]; then
-      for b in main master; do
-        git rev-parse --verify "$b" &>/dev/null && base="$b" && break
-      done
+  worktree_main=$(git worktree list --porcelain 2>/dev/null | awk '/^worktree / {print substr($0, 10); exit}')
+  if [[ -n "$worktree_main" ]]; then
+    if [[ "$top" == "$worktree_main" ]]; then
+      worktree_kind="main"
+    else
+      worktree_kind="linked"
     fi
   fi
 
+  printf "${bold}%s${reset} on branch %s\n" "$repo" "$current"
+  if [[ -n "$worktree_kind" ]]; then
+    printf "        ${dim}worktree: %s${reset}\n" "$worktree_kind"
+    [[ "$worktree_kind" == "linked" ]] && printf "        ${dim}main tree: %s${reset}\n" "${worktree_main/#$HOME/~}"
+  fi
+
+  local base="" base_label=""
+  if (( !no_commits )); then
+    base=$(_hgpa_git_base_ref)
+    base_label="${base#origin/}"
+  fi
+
   # -- branch vs base --
-  if (( !no_commits )) && [[ -n "$base" ]] && [[ "$current" != "$base" ]]; then
+  if (( !no_commits )) && [[ -n "$base" ]] && [[ "$current" != "$base_label" ]]; then
     local branch_files
     branch_files=$(git diff --name-status "$base"...HEAD)
     printf "\n${bold}Changes from %s:${reset}\n" "$base"
@@ -63,7 +140,7 @@ status() {
 
   # -- staged --
   local staged
-  staged=$(git diff --name-status --cached HEAD 2>/dev/null)
+  staged=$(git diff --name-status --cached 2>/dev/null)
   [[ -n "$staged" ]] && printf "\n${bold}Changes to be committed:${reset}\n" && _gbs_files "$green" <<< "$staged"
 
   # -- unstaged --
@@ -87,13 +164,129 @@ status() {
 
   # -- pr --
   if [[ "$current" != "(detached HEAD)" ]] && command -v gh &>/dev/null && command -v jq &>/dev/null; then
-    local pr_json pr_number pr_state pr_reviews pr_ci ci_color rev_color
-    pr_json=$(PAGER=cat gh pr view --json number,state,reviewDecision,statusCheckRollup 2>/dev/null)
+    local pr_json pr_number pr_state pr_reviews pr_ci pr_url pr_threads ci_color rev_color thread_color
+    local unresolved_threads resolved_threads
+    pr_json=$(PAGER=cat gh pr view --json number,state,reviewDecision,statusCheckRollup,url 2>/dev/null)
     if [[ -n "$pr_json" ]]; then
       pr_number=$(jq -r '.number' <<< "$pr_json")
       pr_state=$(jq -r '.state // empty' <<< "$pr_json")
       pr_reviews=$(jq -r '.reviewDecision // "none"' <<< "$pr_json")
       pr_ci=$(jq -r '[.statusCheckRollup[]? | .state] | if length == 0 then "none" elif all(. == "SUCCESS") then "passing" elif any(. == "FAILURE" or . == "ERROR") then "failing" else "pending" end' <<< "$pr_json")
+      pr_url=$(jq -r '.url // empty' <<< "$pr_json")
+      pr_threads=$(_hgpa_pr_thread_summary "$pr_number" "$pr_url")
+
+      ci_color="$reset"
+      [[ "$pr_ci" == "passing" ]] && ci_color="$green"
+      [[ "$pr_ci" == "failing" ]] && ci_color="$red"
+      [[ "$pr_ci" == "pending" ]] && ci_color="$yellow"
+
+      rev_color="$dim"
+      [[ "$pr_reviews" == "APPROVED" ]] && rev_color="$green"
+      [[ "$pr_reviews" == "CHANGES_REQUESTED" ]] && rev_color="$red"
+      [[ "$pr_reviews" == "REVIEW_REQUIRED" || "$pr_reviews" == "COMMENTED" ]] && rev_color="$yellow"
+
+      thread_color="$dim"
+      if [[ -n "$pr_threads" ]]; then
+        unresolved_threads="${pr_threads%% unresolved,*}"
+        resolved_threads="${pr_threads#*, }"
+        resolved_threads="${resolved_threads%% resolved*}"
+        [[ "$unresolved_threads" != "$pr_threads" ]] || unresolved_threads="0"
+        [[ "$resolved_threads" != "$pr_threads" ]] || resolved_threads="0"
+
+        if [[ "${unresolved_threads:-0}" -gt 0 ]]; then
+          thread_color="$yellow"
+        elif [[ "${resolved_threads:-0}" -gt 0 ]]; then
+          thread_color="$green"
+        fi
+      fi
+
+      printf "\n${bold}Pull request #%s${reset}  %s\n" "$pr_number" "$pr_state"
+      [[ -n "$pr_url" ]] && printf "        link: %s\n" "$pr_url"
+      printf "        CI: ${ci_color}%s${reset}\n" "$pr_ci"
+      printf "        reviews: ${rev_color}%s${reset}\n" "$pr_reviews"
+      [[ -n "$pr_threads" ]] && printf "        threads: ${thread_color}%s${reset}\n" "$pr_threads"
+    fi
+  fi
+
+  unfunction _gbs_files
+}
+alias s=status
+
+# context: print a compact environment snapshot for humans and agents
+# - includes time, user, current directory, and git metadata when available
+# - summarizes local changes, branch/base state, upstream tracking, and PR status
+context() {
+  local reset="\033[0m" bold="\033[1m" dim="\033[2m"
+  local green="\033[32m" red="\033[31m" yellow="\033[33m"
+
+  printf "${bold}Context${reset}\n"
+  printf "  ${bold}time:${reset} %s\n" "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+  printf "  ${bold}user:${reset} %s\n" "${USER:-$(whoami)}"
+  printf "  ${bold}dir:${reset} %s\n" "${PWD/#$HOME/~}"
+
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf "  ${bold}git:${reset} ${dim}not a git repository${reset}\n"
+    return 0
+  fi
+
+  local repo top current base base_ref staged_count unstaged_count untracked_count
+  local upstream upstream_ref ahead behind up_ahead up_behind
+  local worktree_main worktree_kind
+  local pr_json pr_number pr_state pr_reviews pr_ci pr_url ci_color rev_color
+
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || return 1
+  repo="${top:t}"
+  current=$(git symbolic-ref --short HEAD 2>/dev/null || echo "(detached HEAD)")
+  worktree_main=$(git worktree list --porcelain 2>/dev/null | awk '/^worktree / {print substr($0, 10); exit}')
+  if [[ -n "$worktree_main" ]]; then
+    if [[ "$top" == "$worktree_main" ]]; then
+      worktree_kind="main"
+    else
+      worktree_kind="linked"
+    fi
+  fi
+
+  base=$(_hgpa_git_base_ref)
+  [[ -n "$base" ]] && base_ref="$base" || base_ref="(unknown)"
+
+  staged_count=$(git diff --name-only --cached 2>/dev/null | wc -l | tr -d ' ')
+  unstaged_count=$(git diff --name-only 2>/dev/null | wc -l | tr -d ' ')
+  untracked_count=$(git ls-files --others --exclude-standard | wc -l | tr -d ' ')
+
+  printf "  ${bold}repo:${reset} %s\n" "$repo"
+  if [[ -n "$worktree_kind" ]]; then
+    printf "  ${bold}worktree:${reset} %s\n" "$worktree_kind"
+    [[ "$worktree_kind" == "linked" ]] && printf "  ${bold}main tree:${reset} %s\n" "${worktree_main/#$HOME/~}"
+  fi
+  printf "  ${bold}branch:${reset} %s\n" "$current"
+  [[ -n "$base" ]] && printf "  ${bold}base:${reset} %s\n" "$base_ref"
+
+  if [[ -n "$base" ]] && [[ "$current" != "(detached HEAD)" ]]; then
+    read -r behind ahead <<<"$(git rev-list --left-right --count "$base"...HEAD 2>/dev/null)"
+    printf "  ${bold}branch diff:${reset} ahead %s, behind %s vs %s\n" "${ahead:-0}" "${behind:-0}" "$base_ref"
+  fi
+
+  printf "  ${bold}changes:${reset} staged %s, unstaged %s, untracked %s\n" \
+    "$staged_count" "$unstaged_count" "$untracked_count"
+
+  upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)
+  if [[ -n "$upstream" ]]; then
+    upstream_ref="$upstream"
+    read -r up_behind up_ahead <<<"$(git rev-list --left-right --count '@{upstream}'...HEAD 2>/dev/null)"
+    printf "  ${bold}upstream:${reset} %s (ahead %s, behind %s)\n" \
+      "$upstream_ref" "${up_ahead:-0}" "${up_behind:-0}"
+  else
+    printf "  ${bold}upstream:${reset} ${dim}none${reset}\n"
+  fi
+
+  if [[ "$current" != "(detached HEAD)" ]] && command -v gh >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    pr_json=$(PAGER=cat gh pr view --json number,state,reviewDecision,statusCheckRollup,url 2>/dev/null)
+    if [[ -n "$pr_json" ]]; then
+      pr_number=$(jq -r '.number' <<< "$pr_json")
+      pr_state=$(jq -r '.state // empty' <<< "$pr_json")
+      pr_reviews=$(jq -r '.reviewDecision // "none"' <<< "$pr_json")
+      pr_ci=$(jq -r '[.statusCheckRollup[]? | .state] | if length == 0 then "none" elif all(. == "SUCCESS") then "passing" elif any(. == "FAILURE" or . == "ERROR") then "failing" else "pending" end' <<< "$pr_json")
+      pr_url=$(jq -r '.url // empty' <<< "$pr_json")
 
       ci_color="$reset"
       [[ "$pr_ci" == "passing" ]] && ci_color="$green"
@@ -104,15 +297,16 @@ status() {
       [[ "$pr_reviews" == "APPROVED" ]] && rev_color="$green"
       [[ "$pr_reviews" == "CHANGES_REQUESTED" ]] && rev_color="$red"
 
-      printf "\n${bold}Pull request #%s${reset}  %s\n" "$pr_number" "$pr_state"
-      printf "        CI: ${ci_color}%s${reset}\n" "$pr_ci"
-      printf "        reviews: ${rev_color}%s${reset}\n" "$pr_reviews"
+      printf "  ${bold}pr:${reset} #%s %s\n" "$pr_number" "$pr_state"
+      [[ -n "$pr_url" ]] && printf "  ${bold}pr link:${reset} %s\n" "$pr_url"
+      printf "  ${bold}ci:${reset} ${ci_color}%s${reset}\n" "$pr_ci"
+      printf "  ${bold}reviews:${reset} ${rev_color}%s${reset}\n" "$pr_reviews"
+    else
+      printf "  ${bold}pr:${reset} ${dim}none${reset}\n"
     fi
   fi
-
-  unfunction _gbs_files
 }
-alias s=status
+alias ctx=context
 
 # commit: stage all and commit with message from stdin
 # Usage: echo "msg" | commit   or   commit < message.txt
@@ -122,23 +316,16 @@ commit() {
 alias c=commit
 
 # gbd: show git diff between current branch and base branch
-# - determines base from origin/HEAD; falls back to 'main' or 'master' if needed
+# - determines base from origin/HEAD, origin/main, origin/master, then local fallback
 # - if base cannot be determined the function exits with an error
 # - any arguments are forwarded to 'git diff' (e.g. gbd --name-only)
 # Usage: gbd [git-diff-args]
 gbd() {
   local base
-  base=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)
-  base=${base#refs/remotes/origin/}
+  base=$(_hgpa_git_base_ref)
 
   if [[ -z "$base" ]]; then
-    for b in main master; do
-      git rev-parse --verify "$b" &>/dev/null && base="$b" && break
-    done
-  fi
-
-  if [[ -z "$base" ]]; then
-    echo "Couldn't determine base branch (origin/HEAD, main, or master)."
+    echo "Couldn't determine base branch (origin/HEAD, origin/main, origin/master, main, or master)."
     return 1
   fi
 

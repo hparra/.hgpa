@@ -17,6 +17,17 @@ Alternatively, you can source individual files.
 
 ## Commands
 
-TODO
+- `status` (`s`) is the primary re-entry command: repo, branch, worktree, local changes, and PR status
+- `context` (`ctx`) prints a compact environment snapshot for agents or handoff-style metadata
 
 ## Shortcuts
+
+## Workflows
+
+```sh
+# return to a terminal and understand what this checkout is
+s
+
+# compact metadata snapshot for agent/handoff context
+ctx
+```
