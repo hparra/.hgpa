@@ -25,6 +25,7 @@ _hgpa_git_default_base_ref() {
 
 _hgpa_git_resolve_base_ref() {
   local ref="$1"
+  local remote_ref=""
   [[ -z "$ref" ]] && return 1
 
   case "$ref" in
@@ -32,7 +33,9 @@ _hgpa_git_resolve_base_ref() {
       ref="${ref#refs/heads/}"
       ;;
     refs/remotes/*)
-      printf "%s\n" "${ref#refs/remotes/}"
+      remote_ref="${ref#refs/remotes/}"
+      git rev-parse --verify "$remote_ref" >/dev/null 2>&1 || return 1
+      printf "%s\n" "$remote_ref"
       return 0
       ;;
   esac
@@ -51,9 +54,12 @@ _hgpa_git_resolve_base_ref() {
 }
 
 _hgpa_git_base_ref() {
-  local current explicit merge_ref created_from fallback
+  local current explicit merge_ref merge_remote created_from fallback
   current=$(git symbolic-ref --short HEAD 2>/dev/null || true)
-  [[ -z "$current" ]] && _hgpa_git_default_base_ref && return 0
+  if [[ -z "$current" ]]; then
+    _hgpa_git_default_base_ref
+    return $?
+  fi
 
   explicit=$(git config --get "branch.$current.gh-merge-base" 2>/dev/null || true)
   if [[ -n "$explicit" ]]; then
@@ -62,10 +68,14 @@ _hgpa_git_base_ref() {
 
   merge_ref=$(git config --get "branch.$current.merge" 2>/dev/null || true)
   if [[ -n "$merge_ref" && "$merge_ref" != "refs/heads/$current" ]]; then
+    merge_remote=$(git config --get "branch.$current.remote" 2>/dev/null || true)
+    if [[ -n "$merge_remote" && "$merge_remote" != "." && "$merge_ref" == refs/heads/* ]]; then
+      _hgpa_git_resolve_base_ref "refs/remotes/$merge_remote/${merge_ref#refs/heads/}" && return 0
+    fi
     _hgpa_git_resolve_base_ref "$merge_ref" && return 0
   fi
 
-  created_from=$(git reflog show --format='%gs' "refs/heads/$current" 2>/dev/null | tail -n 1)
+  created_from=$(git reflog show --reverse -n 1 --format='%gs' "refs/heads/$current" 2>/dev/null || true)
   if [[ "$created_from" == branch:\ Created\ from\ * ]]; then
     created_from="${created_from#branch: Created from }"
     if [[ "$created_from" != "HEAD" ]]; then
