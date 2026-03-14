@@ -1,4 +1,5 @@
 alias gs="git status --show-stash"
+alias gss="git status --short"
 alias gp="git pull"
 
 # Git aliases (hgpa)
@@ -113,6 +114,7 @@ alias gf="git fetch"
 alias gfa="git fetch --all"
 
 alias gd="git diff"
+alias gds="git diff --stat"
 alias gdc="git diff --cached"
 
 alias gr="git rebase"

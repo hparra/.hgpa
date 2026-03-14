@@ -489,7 +489,7 @@ alias ctx=context
 # commit: stage all and commit with message from stdin
 # Usage: echo "msg" | commit   or   commit < message.txt
 commit() {
-  git add . && git commit -a -F -
+  git add -A && git commit -F -
 }
 alias c=commit
 

@@ -37,6 +37,11 @@ export PATH="${HOME}/.local/bin:${PATH}"
 - `shell/` contains environment and bootstrap files that are sourced into the shell session
 - `commands/` contains command-oriented aliases and functions
 
+## Shell behavior
+
+- `shell/init.zsh` sets `bindkey -e` so the prompt keeps Emacs-style editing keys such as `Ctrl-A`, `Ctrl-E`, and Backspace
+- this is separate from `EDITOR` and `VISUAL`, which control which full-screen editor tools launch
+
 ### Organizing commands
 
 You do **not** need one file per command.
@@ -63,6 +68,15 @@ Alternatively, you can source individual files.
 - `status` (`s`) is the primary re-entry command: repo, branch, worktree, local changes, and PR status
 - `copilotwait` (`cw`) polls the current PR until a Copilot review/comment appears or a timeout is reached
 - `context` (`ctx`) prints a compact environment snapshot for agents or handoff-style metadata
+- `commit` (`c`) stages all repo changes and commits either from arguments or stdin
+
+## Git shortcuts
+
+- `gss` runs `git status --short`
+- `gds` runs `git diff --stat`
+- `commit "message"` stages all changes and commits with `-m "message"`
+- `echo "message" | commit` stages all changes and reads the commit message from stdin
+- `commit < message.txt` stages all changes and reads the commit message from a file via stdin
 
 ## Shortcuts
 
@@ -74,6 +88,16 @@ s
 
 # compact metadata snapshot for agent/handoff context
 ctx
+
+# quick git summaries
+gss
+gds
+
+# commit with an inline message
+commit "fix shell aliases"
+
+# commit from stdin
+echo "fix shell aliases" | commit
 
 # wait for Copilot review output on the current PR
 cw
