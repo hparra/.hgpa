@@ -1,5 +1,73 @@
 # .hgpa
 
+## Engineering Life Cycle Workflow
+
+This repository provides a set of custom shell commands and aliases that augment standard Git and GitHub CLI workflows. Together, they cover the entire engineering life cycle from task creation to merging and cleanup.
+
+### 1. Setup & Diagnostics
+
+Before starting development, ensure your environment is ready.
+
+- `doctor` — Checks all expected CLI tools are installed and prints their versions.
+- `doctor --install` — Installs any missing tools automatically.
+
+### 2. Task Creation & Isolation
+
+When picking up a new task, it's best to work in an isolated environment.
+
+- `gwc <task-name>` — Creates a new branch and a linked Git worktree simultaneously. This keeps your main working tree clean.
+
+### 3. Context & Navigation
+
+As you return to a terminal or switch between tasks, you can quickly reorient yourself.
+
+- `status` (or `s`) — The primary re-entry command. Provides a rich git status including the current repo, branch, worktree, stash count, local changes, and PR status (including failing CI check names).
+- `context` (or `ctx`) — Prints a compact environment snapshot (time, user, directory, git state, and PR status) for humans or AI agents.
+- `gws` — Switch between your active worktrees interactively using `fzf`.
+
+### 4. Development & Code Review
+
+While writing code, you can use these shortcuts to review your progress and commit changes.
+
+- `gbd` — Shows the git diff between your current branch and its base branch (resolves base automatically).
+- `review [focus]` — Pipes the current branch diff to an AI agent (Claude) for a code review. Optional `focus` argument narrows the review.
+- `commit` (or `c`) — Stages all repo changes and commits from `stdin`.
+  - `commit "message"` — Stages and commits with an inline message.
+  - `commit --draft` (or `-d`) — Shows files that would be staged without committing.
+  - `commit --ai` (or `-a`) — Generates a commit message from the current diff via Claude, confirms interactively, then commits.
+
+*Standard commands to remember:*
+- `ga` / `gaa` — `git add` / `git add --all`
+- `gco` / `gcob` — `git checkout` / `git checkout -b`
+- `gd` / `gds` / `gdc` — `git diff` / `git diff --stat` / `git diff --cached`
+
+### 5. Pushing & Pull Requests (Standard Commands)
+
+Once your code is committed, push your branch and open a pull request using standard commands.
+
+- `git push -u origin HEAD` — Push your new branch to the remote repository.
+- `gh pr create --web` — Open your browser to create a Pull Request.
+
+### 6. Feedback & CI
+
+Wait for automated reviews and address feedback from reviewers or AI.
+
+- `copilotwait` (or `cw`) — Polls the current PR until a Copilot review/comment appears or a timeout is reached.
+- `threads` (or `th`) — Shows all review threads on the current PR with file, line, and comments.
+
+### 7. Merging & Cleanup
+
+Once approved and CI passes, merge your PR and clean up your local environment.
+
+- `merge` — Safe squash-merge of the current PR. It warns if there are unresolved review threads or failing CI. Afterward, it switches back to the default branch and pulls the latest changes.
+- `gwr` (or `git worktree remove <path>`) — Remove the isolated worktree you created with `gwc`.
+
+### 8. Asynchronous Work & Handoff
+
+If you need to pause work or hand off to another engineer or AI agent.
+
+- `handoff` (or `hoff`, `ho`) — Builds a full session handoff block containing a context snapshot, recent commits, diff stat, and TODOs/FIXMEs, then copies it to your clipboard.
+
 ## Setup
 
 ```sh
@@ -94,64 +162,4 @@ Prefer these shell functions over raw git/gh equivalents:
 - `doctor` — check installed tools; `doctor --install` to install missing ones
 - `c` / `commit` — stage all and commit from stdin; `--draft` to preview staged files, `--ai` for AI-generated message
 - `handoff` — build a session handoff block (context + commits + diff stat + TODOs) and copy to clipboard
-```
-
-## Commands
-
-- `status` (`s`) is the primary re-entry command: repo, branch, worktree, stash count, linked worktrees, local changes, and PR status (including failing CI check names)
-- `copilotwait` (`cw`) polls the current PR until a Copilot review/comment appears or a timeout is reached
-- `context` (`ctx`) prints a compact environment snapshot for agents or handoff-style metadata
-- `handoff` (`hoff`, `ho`) builds a full session handoff block: context snapshot, recent commits, diff stat, and TODOs/FIXMEs; copies to clipboard
-- `review [focus]` pipes the current branch diff to `claude` for a code review; optional focus argument narrows the review
-- `commit` (`c`) stages all repo changes and commits from stdin
-  - `commit --draft` (`-d`) shows files that would be staged without committing
-  - `commit --ai` (`-a`) generates a commit message from the current diff via `claude`, confirms interactively, then commits
-- `doctor` checks all expected CLI tools are installed and prints their versions; `doctor --install` installs any missing tools
-
-## Git shortcuts
-
-- `gss` runs `git status --short`
-- `gds` runs `git diff --stat`
-- `commit "message"` stages all changes and commits with `-m "message"`
-- `echo "message" | commit` stages all changes and reads the commit message from stdin
-- `commit < message.txt` stages all changes and reads the commit message from a file via stdin
-
-## Shortcuts
-
-## Workflows
-
-```sh
-# return to a terminal and understand what this checkout is
-s
-
-# compact metadata snapshot for agent/handoff context
-ctx
-
-# quick git summaries
-gss
-gds
-
-# commit with an inline message
-commit "fix shell aliases"
-
-# commit from stdin
-echo "fix shell aliases" | commit
-
-# wait for Copilot review output on the current PR
-cw
-
-# inspect tool/app install state
-doctor
-
-# install any missing tools
-doctor --install
-
-# install apps
-./setup/apps.zsh
-
-# apply macOS defaults
-./setup/macos.zsh
-
-# run the full setup flow
-./setup/init.zsh
 ```
