@@ -1,13 +1,23 @@
-# Cursor Agent: ensure node/npm/npx use .nvmrc version before running
-# This is a quick hack to ensure cursor agents use the correct node version.
-# [[ -n "$CURSOR_AGENT" ]] && . ~/.zshrc.d/nvm-quick.zsh
+# nvm-quick.zsh - lightweight node version shim for non-interactive shells
+#
+# Agents (Claude Code, Codex, Gemini CLI) only source ~/.zshenv, not ~/.zshrc,
+# so nvm is never loaded and `node` resolves to the wrong version when a repo
+# has a .nvmrc.
+#
+# Add to ~/.zshenv:
+#   export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+#   [[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
+#   [[ -s "$HOME/.hgpa/shell/nvm/nvm-quick.zsh" ]] && . "$HOME/.hgpa/shell/nvm/nvm-quick.zsh"
 
+NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
-_cursor_ensure_node() {
+_hgpa_ensure_node() {
   [[ -r ".nvmrc" ]] || return 0
-  local wanted=$(< .nvmrc)
+  local wanted
+  wanted=$(< .nvmrc)
   wanted="${wanted#v}"; wanted="${wanted%%[[:space:]]*}"
-  local current; current="$(command node --version 2>/dev/null)"; current="${current#v}"
+  local current
+  current="$(command node --version 2>/dev/null)"; current="${current#v}"
   if [[ "$current" == "$wanted"* ]]; then
     return 0
   fi
@@ -15,6 +25,6 @@ _cursor_ensure_node() {
   nvm use >&2
 }
 
-node() { _cursor_ensure_node && command node "$@"; }
-npm()  { _cursor_ensure_node && command npm "$@"; }
-npx()  { _cursor_ensure_node && command npx "$@"; }
+node() { _hgpa_ensure_node && command node "$@"; }
+npm()  { _hgpa_ensure_node && command npm  "$@"; }
+npx()  { _hgpa_ensure_node && command npx  "$@"; }

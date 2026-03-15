@@ -297,6 +297,31 @@ status() {
     [[ "$worktree_kind" == "linked" ]] && printf "        ${dim}main tree: %s${reset}\n" "${worktree_main/#$HOME/~}"
   fi
 
+  local stash_count
+  stash_count=$(git stash list 2>/dev/null | wc -l | tr -d ' ')
+  (( stash_count > 0 )) && printf "        ${dim}stashes: %s${reset}\n" "$stash_count"
+
+  local wt_path="" wt_branch="" wt_line
+  local -a linked_trees=()
+  while IFS= read -r wt_line; do
+    case "$wt_line" in
+      worktree\ *)         wt_path="${wt_line#worktree }" ;;
+      branch\ refs/heads/*) wt_branch="${wt_line#branch refs/heads/}" ;;
+      "")
+        if [[ -n "$wt_path" && "$wt_path" != "$worktree_main" ]]; then
+          linked_trees+=("${wt_path/#$HOME/~}  [${wt_branch:-(detached)}]")
+        fi
+        wt_path=""; wt_branch=""
+        ;;
+    esac
+  done < <(git worktree list --porcelain 2>/dev/null)
+  if (( ${#linked_trees[@]} > 0 )); then
+    printf "        ${dim}linked worktrees:${reset}\n"
+    for lt in "${linked_trees[@]}"; do
+      printf "          ${dim}%s${reset}\n" "$lt"
+    done
+  fi
+
   local base="" base_label=""
   if (( !no_commits )); then
     base=$(_hgpa_git_base_ref)
@@ -349,6 +374,8 @@ status() {
       pr_state=$(jq -r '.state // empty' <<< "$pr_json")
       pr_reviews=$(jq -r '.reviewDecision // "none"' <<< "$pr_json")
       pr_ci=$(jq -r '[.statusCheckRollup[]? | .state] | if length == 0 then "none" elif all(. == "SUCCESS") then "passing" elif any(. == "FAILURE" or . == "ERROR") then "failing" else "pending" end' <<< "$pr_json")
+      local pr_failing_checks
+      pr_failing_checks=$(jq -r '[.statusCheckRollup[]? | select(.state == "FAILURE" or .state == "ERROR") | (.name // .context // "unknown")] | join(", ")' <<< "$pr_json")
       pr_url=$(jq -r '.url // empty' <<< "$pr_json")
       pr_threads=$(_hgpa_pr_thread_summary "$pr_number" "$pr_url")
 
@@ -380,6 +407,8 @@ status() {
       printf "\n${bold}Pull request #%s${reset}  %s\n" "$pr_number" "$pr_state"
       [[ -n "$pr_url" ]] && printf "        link: %s\n" "$pr_url"
       printf "        CI: ${ci_color}%s${reset}\n" "$pr_ci"
+      [[ -n "$pr_failing_checks" && "$pr_ci" == "failing" ]] && \
+        printf "        failing: ${red}%s${reset}\n" "$pr_failing_checks"
       printf "        reviews: ${rev_color}%s${reset}\n" "$pr_reviews"
       [[ -n "$pr_threads" ]] && printf "        threads: ${thread_color}%s${reset}\n" "$pr_threads"
     fi
@@ -486,9 +515,169 @@ context() {
 }
 alias ctx=context
 
-# commit: stage all and commit with message from stdin
-# Usage: echo "msg" | commit   or   commit < message.txt
+# handoff: build a complete session handoff block and copy to clipboard
+# - includes context snapshot, recent commits, diff stat, and TODO/FIXME scan
+# Usage: handoff  (aliases: hoff, ho)
+handoff() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "handoff: not inside a git repository."
+    return 1
+  fi
+
+  _strip_ansi() { sed $'s/\033\\[[0-9;]*m//g'; }
+
+  local output=""
+
+  output+="$(context 2>&1 | _strip_ansi)"$'\n\n'
+
+  output+="## Recent commits (last 10)"$'\n'
+  local log
+  log=$(git log --oneline -10 2>/dev/null || true)
+  output+="${log:-(no commits)}"$'\n\n'
+
+  local base
+  base=$(_hgpa_git_base_ref)
+  if [[ -n "$base" ]]; then
+    output+="## Diff stat vs $base"$'\n'
+    local stat
+    stat=$(gbd --stat 2>/dev/null || true)
+    output+="${stat:-(no diff)}"$'\n\n'
+  fi
+
+  output+="## TODOs / FIXMEs (first 20)"$'\n'
+  if command -v rg >/dev/null 2>&1; then
+    local todos
+    todos=$(rg --no-heading --line-number -i 'TODO|FIXME' \
+      --glob '!*.lock' --glob '!package-lock.json' --glob '!yarn.lock' \
+      . 2>/dev/null | head -20 || true)
+    output+="${todos:-(none found)}"$'\n'
+  else
+    output+="(rg not available)"$'\n'
+  fi
+
+  printf "%s" "$output"
+  if command -v pbcopy >/dev/null 2>&1; then
+    printf "%s" "$output" | pbcopy
+    printf "\n[Copied to clipboard]\n" >&2
+  else
+    printf "\n[pbcopy not available — output printed only]\n" >&2
+  fi
+
+  unfunction _strip_ansi
+}
+alias hoff=handoff
+alias ho=handoff
+
+# review: pipe current branch diff to claude for a code review
+# Usage: review [focus-description]
+review() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "review: not inside a git repository."
+    return 1
+  fi
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "review: claude CLI not found. Install: npm install -g @anthropic-ai/claude-code"
+    return 1
+  fi
+
+  local diff
+  diff=$(gbd 2>/dev/null || true)
+  if [[ -z "$diff" ]]; then
+    echo "review: no diff found vs base branch."
+    return 0
+  fi
+
+  local focus="${1:-}"
+  local intro="Please review the following git diff."
+  [[ -n "$focus" ]] && intro="Please review the following git diff with a focus on: ${focus}."
+
+  claude -p "${intro}
+
+Provide:
+1. A brief summary of what changed
+2. Potential issues or bugs
+3. Suggestions for improvement
+
+Diff:
+${diff}"
+}
+
+# commit: stage all and commit
+# Usage:
+#   echo "msg" | commit          pipe message from stdin (default)
+#   commit --draft / -d          dry run: show what would be staged
+#   commit --ai / -a             generate commit message via claude then commit
 commit() {
+  local draft=0 ai=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --draft|-d) draft=1; shift ;;
+      --ai|-a)    ai=1;    shift ;;
+      --) shift; break ;;
+      -*)
+        echo "commit: unknown flag: $1"
+        echo "Usage: commit [--draft|-d] [--ai|-a]"
+        return 1
+        ;;
+      *)
+        echo "commit: unexpected argument: $1"
+        return 1
+        ;;
+    esac
+  done
+
+  if (( draft )); then
+    echo "Files that would be staged:"
+    git status --short
+    return 0
+  fi
+
+  if (( ai )); then
+    if ! command -v claude >/dev/null 2>&1; then
+      echo "commit --ai: claude CLI not found. Install: npm install -g @anthropic-ai/claude-code"
+      return 1
+    fi
+    if [[ ! -t 0 ]]; then
+      echo "commit --ai: requires an interactive terminal."
+      return 1
+    fi
+
+    local diff
+    diff=$(git diff --cached 2>/dev/null)
+    [[ -z "$diff" ]] && diff=$(git diff HEAD 2>/dev/null)
+    if [[ -z "$diff" ]]; then
+      echo "commit --ai: no changes found."
+      return 1
+    fi
+
+    local msg
+    msg=$(claude -p "Generate a concise git commit message for the following diff.
+Return only the commit message text — no preamble, explanation, or markdown.
+Use imperative mood. Subject line under 72 characters.
+If complex, add a blank line and short body paragraph.
+
+Diff:
+${diff}" 2>/dev/null)
+
+    if [[ -z "$msg" ]]; then
+      echo "commit --ai: claude returned an empty message."
+      return 1
+    fi
+
+    echo "Generated commit message:"
+    echo "---"
+    echo "$msg"
+    echo "---"
+    echo -n "Commit with this message? [y/N] "
+    local answer
+    read -r answer
+    [[ "$answer" != "y" && "$answer" != "Y" ]] && echo "Aborted." && return 0
+
+    git add -A && printf "%s" "$msg" | git commit -F -
+    return $?
+  fi
+
+  # default: read from stdin
   git add -A && git commit -F -
 }
 alias c=commit
@@ -564,4 +753,64 @@ gws() {
 
   local selpath="${workpaths[$num]}"
   cd "$selpath" || echo "Failed to cd to $selpath"
+}
+
+# doctor: check (and optionally install) all expected CLI tools
+# Usage: doctor [--install|-i]
+doctor() {
+  local do_install=0
+  [[ "${1:-}" == "--install" || "${1:-}" == "-i" ]] && do_install=1
+
+  local reset="\033[0m" green="\033[32m" red="\033[31m" bold="\033[1m" dim="\033[2m" yellow="\033[33m"
+
+  _doc_tool() {
+    local label="$1" cmd="$2" version_cmd="$3" install_cmd="$4"
+    if command -v "$cmd" >/dev/null 2>&1; then
+      local ver=""
+      [[ -n "$version_cmd" ]] && ver=$(eval "$version_cmd" 2>/dev/null | head -n 1 || true)
+      printf "  ${green}✓${reset} %-12s ${dim}%s${reset}\n" "$label" "$ver"
+    elif (( do_install )) && [[ -n "$install_cmd" ]]; then
+      printf "  ${yellow}↓${reset} %-12s ${dim}installing…${reset}\n" "$label"
+      eval "$install_cmd"
+    else
+      printf "  ${red}✗${reset} %-12s ${dim}not found${reset}\n" "$label"
+    fi
+  }
+
+  # ensure brew is on PATH (ARM Macs)
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+
+  printf "${bold}Core CLIs${reset}\n"
+  _doc_tool brew    brew    "brew --version | head -n 1"      'curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash'
+  _doc_tool git     git     "git --version"                    "brew install git"
+  _doc_tool gh      gh      "gh --version | head -n 1"        "brew install gh"
+  _doc_tool jq      jq      "jq --version"                    "brew install jq"
+  _doc_tool rg      rg      "rg --version | head -n 1"        "brew install ripgrep"
+  _doc_tool fd      fd      "fd --version"                    "brew install fd"
+  _doc_tool bat     bat     "bat --version"                   "brew install bat"
+
+  printf "\n${bold}Utility CLIs${reset}\n"
+  _doc_tool fzf     fzf     "fzf --version"                   "brew install fzf"
+  _doc_tool uv      uv      "uv --version | head -n 1"        "brew install uv"
+  _doc_tool tree    tree    "tree --version | head -n 1"      "brew install tree"
+  _doc_tool wget    wget    "wget --version | head -n 1"      "brew install wget"
+  _doc_tool tmux    tmux    "tmux -V"                         "brew install tmux"
+  _doc_tool direnv  direnv  "direnv version"                  "brew install direnv"
+
+  printf "\n${bold}Language Tooling${reset}\n"
+  _doc_tool nvm     nvm     "nvm --version"                   'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash'
+  _doc_tool node    node    "node --version"                  "nvm install --lts"
+  _doc_tool pyenv   pyenv   "pyenv --version"                 "brew install pyenv"
+
+  printf "\n${bold}Agent CLIs${reset}\n"
+  _doc_tool claude  claude  "claude --version 2>/dev/null | head -n 1"  "npm install -g @anthropic-ai/claude-code"
+  _doc_tool codex   codex   "codex --version 2>/dev/null | tail -n 1"   "npm install -g @openai/codex"
+  _doc_tool gemini  gemini  ""                                           "npm install -g @google/gemini-cli"
+  _doc_tool copilot copilot ""                                           "npm install -g @github/copilot"
+
+  unfunction _doc_tool
 }
