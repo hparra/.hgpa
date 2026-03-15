@@ -13,7 +13,11 @@ doctor --install
 # Re-source nvm in case it was just installed, then install node if needed
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 [[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
-command -v node >/dev/null 2>&1 || nvm install --lts
+if command -v nvm >/dev/null 2>&1; then
+  command -v node >/dev/null 2>&1 || nvm install --lts
+else
+  echo "nvm not available; skipping node install. Source nvm and rerun, or install node manually." >&2
+fi
 
 "$root/apps.zsh"
 "$root/macos.zsh"

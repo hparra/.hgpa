@@ -642,10 +642,14 @@ commit() {
       return 1
     fi
 
-    local diff
+    local diff untracked
     diff=$(git diff --cached 2>/dev/null)
     [[ -z "$diff" ]] && diff=$(git diff HEAD 2>/dev/null)
-    if [[ -z "$diff" ]]; then
+    untracked=$(git ls-files --others --exclude-standard 2>/dev/null)
+    if [[ -n "$untracked" ]]; then
+      diff+=$'\n'"# Untracked files that will be staged:"$'\n'"$untracked"
+    fi
+    if [[ -z "$diff" && -z "$untracked" ]]; then
       echo "commit --ai: no changes found."
       return 1
     fi
@@ -785,7 +789,7 @@ doctor() {
   fi
 
   printf "${bold}Core CLIs${reset}\n"
-  _doc_tool brew    brew    "brew --version | head -n 1"      'curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | bash'
+  _doc_tool brew    brew    "brew --version | head -n 1"      'tmp=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "$tmp" && bash "$tmp"; rm -f "$tmp"; [[ -x /opt/homebrew/bin/brew ]] && eval "$(/opt/homebrew/bin/brew shellenv)" || [[ -x /usr/local/bin/brew ]] && eval "$(/usr/local/bin/brew shellenv)"'
   _doc_tool git     git     "git --version"                    "brew install git"
   _doc_tool gh      gh      "gh --version | head -n 1"        "brew install gh"
   _doc_tool jq      jq      "jq --version"                    "brew install jq"
@@ -803,6 +807,9 @@ doctor() {
 
   printf "\n${bold}Language Tooling${reset}\n"
   _doc_tool nvm     nvm     "nvm --version"                   'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash'
+  # re-source nvm in case it was just installed in the _doc_tool call above
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  [[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh"
   _doc_tool node    node    "node --version"                  "nvm install --lts"
   _doc_tool pyenv   pyenv   "pyenv --version"                 "brew install pyenv"
 

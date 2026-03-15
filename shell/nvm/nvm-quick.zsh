@@ -21,6 +21,7 @@ _hgpa_ensure_node() {
   if [[ "$current" == "$wanted"* ]]; then
     return 0
   fi
+  command -v nvm >/dev/null 2>&1 || return 0
   echo "Node $current does not satisfy .nvmrc ($wanted), running nvm use…" >&2
   nvm use >&2
 }
