@@ -78,7 +78,8 @@ For quick glances:
 ```sh
 gss     # git status --short
 gds     # git diff --stat
-gl      # git log --oneline (last 20)
+gl      # git log
+glo     # git log --oneline
 ```
 
 ### 2. Branch — start working
@@ -141,14 +142,14 @@ Standard git shortcuts if you prefer manual staging:
 gc      # git commit
 gcm     # git commit -m
 gca     # git commit --amend
-goops   # git commit --amend --no-edit (forgot a file)
+goops   # stage all (including untracked) + amend last commit silently
 ```
 
 ### 6. Push and open a PR
 
 ```sh
-gp              # git push
-ghpr            # gh pr create --web
+git push        # push to remote (no alias — be intentional)
+ghpr            # gh pr
 ghprv           # gh pr view
 ```
 
@@ -182,7 +183,7 @@ Address feedback, commit again, push again. Use `s` to check CI and review statu
 s               # ⚡ see updated PR status, CI checks, review state
 gbd             # ⚡ verify full diff vs base still looks right
 commit --ai     # ⚡ commit the next round
-gp              # push
+git push        # push
 ```
 
 Rebase shortcuts if needed:
@@ -235,7 +236,7 @@ Prefer these shell functions over raw git/gh equivalents:
 
 ```
 shell/          # environment and bootstrap (sourced into session)
-  init.zsh      # autoloads shell/**/*.zsh and commands/**/*.zsh
+  init.zsh      # sources shell/**/*.zsh and commands/**/*.zsh (excludes init.zsh, nvm-quick.zsh)
   env.zsh       # EDITOR, VISUAL, locale
   prompt.zsh    # git-aware prompt with status indicators
   nvm/          # node version management
@@ -249,7 +250,7 @@ docs/           # additional documentation
 
 ### Adding commands
 
-One file per domain. Drop aliases and functions into a file under `commands/`, restart your shell. `shell/init.zsh` autoloads everything under `commands/**/*.zsh`.
+One file per domain. Drop aliases and functions into a file under `commands/`, restart your shell. `shell/init.zsh` sources everything under `commands/**/*.zsh`.
 
 If load order matters, use filename prefixes: `00-core.zsh`, `10-git.zsh`, `20-dev.zsh`.
 
