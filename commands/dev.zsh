@@ -419,6 +419,84 @@ status() {
 alias s=status
 alias cw=copilotwait
 
+# threads: show all review threads on the current PR with file, line, and comments
+# Usage: threads [pr-number-or-url]
+threads() {
+  local pr_ref="${1:-}"
+
+  if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    echo "threads requires both gh and jq."
+    return 1
+  fi
+
+  local pr_json pr_number pr_url repo_path owner repo
+  pr_json=$(PAGER=cat gh pr view ${pr_ref:+$pr_ref} --json number,url 2>/dev/null) || {
+    echo "threads: couldn't resolve a pull request."
+    return 1
+  }
+  pr_number=$(jq -r '.number' <<< "$pr_json")
+  pr_url=$(jq -r '.url' <<< "$pr_json")
+
+  repo_path="${pr_url#https://github.com/}"
+  repo_path="${repo_path%%/pull/*}"
+  owner="${repo_path%%/*}"
+  repo="${repo_path#*/}"
+
+  local query response
+  read -r -d '' query <<EOF
+query {
+  repository(owner: "$owner", name: "$repo") {
+    pullRequest(number: $pr_number) {
+      reviewThreads(first: 50) {
+        nodes {
+          id
+          isResolved
+          path
+          line
+          originalLine
+          comments(first: 10) {
+            nodes {
+              author { login }
+              body
+              url
+            }
+          }
+        }
+      }
+    }
+  }
+}
+EOF
+
+  response=$(gh api graphql -f query="$query" 2>/dev/null) || {
+    echo "threads: GraphQL query failed."
+    return 1
+  }
+
+  local reset=$'\033[0m' bold=$'\033[1m' dim=$'\033[2m' green=$'\033[32m' yellow=$'\033[33m' red=$'\033[31m'
+
+  jq -r --arg reset "$reset" --arg bold "$bold" --arg dim "$dim" \
+        --arg green "$green" --arg yellow "$yellow" --arg red "$red" '
+    (.data.repository.pullRequest.reviewThreads.nodes // []) as $threads
+    | if ($threads | length) == 0 then "No review threads."
+      else $threads[] | (
+        (if .isResolved then ($green + "✓ resolved") else ($yellow + "● unresolved") end) as $status |
+        (.line // .originalLine // "?") as $lineno |
+        "\($bold)\(.path):\($lineno)\($reset)  \($status)\($reset)\n" +
+        (
+          .comments.nodes[] |
+          "  \($bold)\(.author.login)\($reset)\n" +
+          (
+            .body | split("\n") |
+            map("  " + .) | join("\n")
+          ) + "\n  \($dim)\(.url)\($reset)"
+        )
+      )
+      end
+  ' <<< "$response"
+}
+alias th=threads
+
 # context: print a compact environment snapshot for humans and agents
 # - includes time, user, current directory, and git metadata when available
 # - summarizes local changes, branch/base state, upstream tracking, and PR status
