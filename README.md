@@ -1,5 +1,15 @@
 # .hgpa
 
+Personal Zsh automation for day-to-day engineering work.
+
+This repo gives you:
+- fast bootstrap for a new machine/session,
+- opinionated Git + PR helpers,
+- agent-friendly commands for context, reviews, and handoffs,
+- plus standard aliases so the common Unix/Git muscle memory still works.
+
+---
+
 ## Setup
 
 ```sh
@@ -46,42 +56,164 @@ export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
 This file is intentionally excluded from `shell/init.zsh` — the full `nvm.zsh` with `chpwd` hooks handles interactive shells already.
 
+---
+
 ## Layout
 
-- `shell/` contains environment and bootstrap files that are sourced into the shell session
-- `commands/` contains command-oriented aliases and functions
+- `shell/` environment + bootstrap files sourced into each shell session
+- `commands/` aliases/functions for daily work
+- `setup/` machine bootstrap scripts
+- `docs/` supporting docs
 
-## Shell behavior
+---
 
-- `shell/init.zsh` sets `bindkey -e` so the prompt keeps Emacs-style editing keys such as `Ctrl-A`, `Ctrl-E`, and Backspace
-- this is separate from `EDITOR` and `VISUAL`, which control which full-screen editor tools launch
+## Command model: what is custom vs standard?
 
-### Organizing commands
+### Custom workflow commands (the real value)
+These are higher-level commands that combine multiple checks/actions:
 
-You do **not** need one file per command.
+- `s` / `status` — enriched repo status: branch/base diff, staged/unstaged/untracked, worktrees, stash, PR state, CI, review threads
+- `ctx` / `context` — compact session state for handoff or agent prompts
+- `gbd` — diff current branch vs inferred base branch
+- `c` / `commit` — stage-all + commit via stdin (`--draft`, `--ai`)
+- `review [focus]` — send branch diff to Claude for code review
+- `th` / `threads` — print PR review threads with file/line context
+- `cw` / `copilotwait` — wait/poll for Copilot review activity on current PR
+- `merge` — guarded squash merge (blocks unresolved threads, warns on CI)
+- `ho` / `hoff` / `handoff` — generate shareable session handoff block
+- `doctor [--install]` — check/install expected CLI dependencies
+- `gws` — fuzzy-switch Git worktrees
+- `gwc <label> [base]` — create a branch + worktree in one step
 
-A practical pattern is:
+### Standard convenience aliases (mostly wrappers)
+These are mostly muscle-memory shortcuts around existing commands:
 
-- keep one file per domain (`git`, `dev`, `aliases`, `docker`, `k8s`, etc.)
-- group tiny aliases together in shared files
-- keep larger shell functions in domain files, with a short header comment per function
-- only split to one-command-per-file when a function becomes long, has tests/docs, or has collaborators
+- Git basics: `gss`, `gds`, `gd`, `ga`, `gaa`, `gc`, `gcm`, `gca`, `gcan`, `gp`, `gf`, `gfa`, `gr*`
+- GitHub CLI shortcuts: `ghpr*`, `ghrv*`
+- Shell quality-of-life: `..`, `...`, `la`, `ll`, `dfh`, `duh`, `ports`
 
-`shell/init.zsh` already autoloads everything under `commands/**/*.zsh`, so the collection strategy is simply:
+If these disappeared, you could still run the equivalent raw `git`, `gh`, and Unix commands.
 
-1. create a domain file in `commands/`
-2. drop aliases/functions into that file
-3. source `.hgpa/shell/init.zsh` (or restart shell)
+---
 
-If load order ever matters, use filename prefixes (for example `00-core.zsh`, `10-git.zsh`, `20-dev.zsh`) so glob ordering stays predictable.
+## Engineering lifecycle workflow
 
-Alternatively, you can source individual files.
+The commands in this repo are enough to run an end-to-end cycle; when something is not specialized, standard Git/GitHub commands cover the rest.
+
+### 0) Bootstrap environment
+```sh
+doctor
+# optionally install what's missing
+doctor --install
+./setup/apps.zsh
+./setup/macos.zsh
+```
+
+### 1) Re-enter and understand current state
+```sh
+s      # deep repo + PR status
+ctx    # compact context snapshot
+gss    # standard short status
+gds    # standard diff stat
+```
+
+### 2) Start work
+```sh
+# create isolated feature workspace
+gwc auth-refresh main
+
+# switch between worktrees later
+gws
+```
+
+### 3) Implement + inspect changes
+```sh
+# compare branch to inferred base
+gbd --stat
+gbd
+
+# optionally use regular git tools
+gd
+git add -p
+```
+
+### 4) Commit changes
+```sh
+# draft what would be staged
+commit --draft
+
+# commit with explicit message via stdin
+echo "feat: add auth refresh flow" | commit
+
+# or ask AI to draft message (interactive)
+commit --ai
+```
+
+### 5) Open/update PR and review quality
+```sh
+# use normal gh flow for PR creation/edit
+gh pr create
+gh pr view
+
+# workflow helpers
+review security           # AI review with focus area
+th                        # inspect review threads
+cw                        # wait for Copilot feedback
+```
+
+### 6) Resolve feedback and verify
+```sh
+s                          # confirm file + PR + CI state
+th                         # ensure unresolved thread count is zero
+gbd --name-only            # verify exact delta
+```
+
+### 7) Merge and close
+```sh
+merge
+```
+
+### 8) Handoff / async collaboration
+```sh
+handoff
+```
+
+---
+
+## What's missing (by design) and covered by standard commands
+
+This toolkit is strong on **status visibility, branch diffing, commit ergonomics, PR threading, and handoff**. It intentionally does **not** fully replace these parts of the lifecycle:
+
+1. **Project-specific test/build/deploy commands**
+   - Missing generic wrappers is good here; each repo has different commands.
+   - Use normal commands like `npm test`, `pnpm test`, `pytest`, `go test ./...`, `make test`, CI pipelines.
+
+2. **PR creation and metadata management abstraction**
+   - You still use `gh pr create/edit/view` directly.
+   - This keeps PR templates, labels, assignees, and org-specific workflows explicit.
+
+3. **Issue tracking integration (Jira/Linear/GitHub Issues)**
+   - No custom issue commands here.
+   - Use native tools/APIs (`gh issue ...`, Jira CLI, Linear CLI/web UI).
+
+4. **Release/versioning orchestration**
+   - No release helper command currently.
+   - Use `gh release create`, changelog tooling, and your repo’s release scripts.
+
+5. **Environment/runtime orchestration per project**
+   - No universal `dev up/down` command for containers/services.
+   - Use project-local scripts (`make dev`, `docker compose up`, etc.).
+
+In short: this repo provides excellent **cross-project shell ergonomics**, while project-specific lifecycle steps remain intentionally standard and explicit.
+
+---
 
 ## Agent configuration
 
-These shell commands are available in any interactive session. To make agents aware of them, add the following blurb to your global agent configuration files:
+These shell commands are available in any interactive session. To make agents aware of them, add this to your global agent configuration files:
 
-**`~/.claude/CLAUDE.md`** (Claude Code) and **`~/AGENTS.md`** (Codex):
+- `~/.claude/CLAUDE.md` (Claude Code)
+- `~/AGENTS.md` (Codex)
 
 ```markdown
 ## Shell commands (.hgpa)
@@ -96,62 +228,21 @@ Prefer these shell functions over raw git/gh equivalents:
 - `handoff` — build a session handoff block (context + commits + diff stat + TODOs) and copy to clipboard
 ```
 
-## Commands
+## Organizing commands
 
-- `status` (`s`) is the primary re-entry command: repo, branch, worktree, stash count, linked worktrees, local changes, and PR status (including failing CI check names)
-- `copilotwait` (`cw`) polls the current PR until a Copilot review/comment appears or a timeout is reached
-- `context` (`ctx`) prints a compact environment snapshot for agents or handoff-style metadata
-- `handoff` (`hoff`, `ho`) builds a full session handoff block: context snapshot, recent commits, diff stat, and TODOs/FIXMEs; copies to clipboard
-- `review [focus]` pipes the current branch diff to `claude` for a code review; optional focus argument narrows the review
-- `commit` (`c`) stages all repo changes and commits from stdin
-  - `commit --draft` (`-d`) shows files that would be staged without committing
-  - `commit --ai` (`-a`) generates a commit message from the current diff via `claude`, confirms interactively, then commits
-- `doctor` checks all expected CLI tools are installed and prints their versions; `doctor --install` installs any missing tools
+You do **not** need one file per command.
 
-## Git shortcuts
+Practical pattern:
 
-- `gss` runs `git status --short`
-- `gds` runs `git diff --stat`
-- `commit "message"` stages all changes and commits with `-m "message"`
-- `echo "message" | commit` stages all changes and reads the commit message from stdin
-- `commit < message.txt` stages all changes and reads the commit message from a file via stdin
+- keep one file per domain (`git`, `dev`, `aliases`, `docker`, `k8s`, etc.)
+- group tiny aliases together in shared files
+- keep larger shell functions in domain files, with a short header comment per function
+- split to one-command-per-file only when a function becomes long, has tests/docs, or has collaborators
 
-## Shortcuts
+`shell/init.zsh` autoloads everything under `commands/**/*.zsh`, so the strategy is simple:
 
-## Workflows
+1. create a domain file in `commands/`
+2. add aliases/functions there
+3. reload shell (`source ~/.hgpa/shell/init.zsh`) or restart terminal
 
-```sh
-# return to a terminal and understand what this checkout is
-s
-
-# compact metadata snapshot for agent/handoff context
-ctx
-
-# quick git summaries
-gss
-gds
-
-# commit with an inline message
-commit "fix shell aliases"
-
-# commit from stdin
-echo "fix shell aliases" | commit
-
-# wait for Copilot review output on the current PR
-cw
-
-# inspect tool/app install state
-doctor
-
-# install any missing tools
-doctor --install
-
-# install apps
-./setup/apps.zsh
-
-# apply macOS defaults
-./setup/macos.zsh
-
-# run the full setup flow
-./setup/init.zsh
-```
+If load order matters, use filename prefixes (for example `00-core.zsh`, `10-git.zsh`, `20-dev.zsh`).
