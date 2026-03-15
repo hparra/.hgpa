@@ -215,22 +215,36 @@ handoff     # ⚡ build handoff block: context + recent commits + diff stat + TO
 
 ## Agent configuration
 
-These commands work in any interactive shell. To make AI agents aware of them, add this to your global agent config:
+`setup/init.zsh` automatically wires `.hgpa` into Claude Code's user-level config:
 
-**`~/.claude/CLAUDE.md`** (Claude Code) · **`~/AGENTS.md`** (Codex)
-
-```markdown
-## Shell commands (.hgpa)
-
-Prefer these shell functions over raw git/gh equivalents:
-
-- `s` — rich git status: branch, worktree, stash, staged/unstaged files, PR state, CI checks
-- `ctx` — compact environment snapshot (time, user, dir, git, PR)
-- `gbd` — git diff vs base branch (resolves base automatically)
-- `doctor` — check installed tools; `doctor --install` to install missing ones
-- `c` / `commit` — stage all and commit from stdin; `--draft` to preview staged files, `--ai` for AI-generated message
-- `handoff` — build a session handoff block (context + commits + diff stat + TODOs) and copy to clipboard
 ```
+~/.claude/CLAUDE.md  → ~/.hgpa/CLAUDE.md        # global agent instructions
+~/.claude/agents/    → ~/.hgpa/agents/           # user-level sub-agents
+~/.claude/commands/  → ~/.hgpa/claude-commands/  # user-level slash commands
+```
+
+These are **user-level** — available in every repo automatically. Project repos can still define their own `.claude/agents/` and `.claude/commands/` that layer on top.
+
+### Sub-agents
+
+| Agent | Description |
+|---|---|
+| `commit` | Stage all + commit (with message or `--ai`) |
+| `review` | AI code review on branch diff, optional focus |
+| `merge` | Squash-merge PR with safety checks |
+| `handoff` | Build session handoff block, copy to clipboard |
+
+### Slash commands
+
+| Command | Description |
+|---|---|
+| `/status` | Rich git status |
+| `/commit [msg]` | Stage + commit; AI message if no arg |
+| `/review [focus]` | AI code review |
+| `/handoff` | Session handoff to clipboard |
+| `/merge` | Safe squash-merge |
+
+For Codex, add the contents of `CLAUDE.md` to `~/AGENTS.md` manually (Codex does not support user-level agent/command directories).
 
 ## Layout
 

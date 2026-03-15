@@ -21,3 +21,9 @@ fi
 
 "$root/apps.zsh"
 "$root/macos.zsh"
+
+# Symlink .hgpa into ~/.claude so agents and commands are available in all repos
+mkdir -p ~/.claude
+ln -sf ~/.hgpa/CLAUDE.md       ~/.claude/CLAUDE.md
+ln -sf ~/.hgpa/agents          ~/.claude/agents
+ln -sf ~/.hgpa/claude-commands ~/.claude/commands
