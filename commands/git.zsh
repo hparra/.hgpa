@@ -3,7 +3,7 @@ alias gss="git status --short"
 alias gp="git pull"
 
 # Git aliases (hgpa)
-alias goops="git commit -a --amend --no-edit"
+alias goops="git add -A && git commit --amend --no-edit"
 alias greset="git reset HEAD^"
 
 # git log (gl)

@@ -1,42 +1,41 @@
 # .hgpa
 
+Shell commands and environment for the development lifecycle — from setup through merge.
+
+Everything below assumes `.hgpa` is installed and sourced. Custom commands are marked with `⚡`. Standard git and gh aliases are listed where they fit in the workflow so you can stay in the flow without memorizing anything extra.
+
 ## Setup
 
 ```sh
-# clone .hgpa in HOME directory:
+# clone into HOME
 git clone https://github.com/hparra/.hgpa.git ~/.hgpa
 
-# add source init to [~/.zshrc](../.zshrc):
+# add to ~/.zshrc
 echo '\n. ~/.hgpa/shell/init.zsh' >> ~/.zshrc
 
-# start a new shell session, or source the init file:
+# start using it
 source ~/.hgpa/shell/init.zsh
 ```
 
-## Machine-specific environment (`~/.zshenv`)
+### Machine identity (`~/.zshenv`)
 
-`~/.zshenv` is sourced on every shell invocation and is the right place for variables that are specific to a machine or context (home, work, etc.). It is not tracked in this repo.
+`~/.zshenv` is sourced on every shell invocation — interactive and non-interactive (including AI agents). Put machine-specific variables here. This file is not tracked.
 
 ```sh
-# Identity — may differ between home and work machines
 export NAME="Your Name"
 export EMAIL="you@example.com"
 
-# Git identity
 export GIT_AUTHOR_NAME="$NAME"
 export GIT_AUTHOR_EMAIL="$EMAIL"
 export GIT_COMMITTER_NAME="$NAME"
 export GIT_COMMITTER_EMAIL="$EMAIL"
 
-# PATH additions specific to this machine
 export PATH="${HOME}/.local/bin:${PATH}"
 ```
 
-## Node version management for agents
+### Node version management for agents
 
-AI agents (Claude Code, Codex, Gemini CLI) only source `~/.zshenv` — they skip `~/.zshrc` entirely. This means `nvm` is never loaded, and `node` resolves to whatever is on `PATH`, ignoring `.nvmrc`.
-
-`shell/nvm/nvm-quick.zsh` wraps `node`, `npm`, and `npx` to call `nvm use` automatically when the current version doesn't match `.nvmrc`. To enable it for agent sessions, add to `~/.zshenv`:
+AI agents only source `~/.zshenv` — they skip `~/.zshrc`, so `nvm` is never loaded. `shell/nvm/nvm-quick.zsh` wraps `node`, `npm`, and `npx` to call `nvm use` automatically when the version doesn't match `.nvmrc`. Add to `~/.zshenv`:
 
 ```sh
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -44,44 +43,181 @@ export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 [[ -s "$HOME/.hgpa/shell/nvm/nvm-quick.zsh" ]] && . "$HOME/.hgpa/shell/nvm/nvm-quick.zsh"
 ```
 
-This file is intentionally excluded from `shell/init.zsh` — the full `nvm.zsh` with `chpwd` hooks handles interactive shells already.
+### Check your tools
 
-## Layout
+```sh
+doctor            # ⚡ audit installed CLIs and versions
+doctor --install  # ⚡ install anything missing via brew/npm
+```
 
-- `shell/` contains environment and bootstrap files that are sourced into the shell session
-- `commands/` contains command-oriented aliases and functions
+`doctor` checks: brew, git, gh, jq, rg, fd, bat, fzf, uv, tree, wget, tmux, direnv, nvm, node, pyenv, claude, codex, gemini, copilot.
 
-## Shell behavior
+For desktop apps and macOS defaults:
 
-- `shell/init.zsh` sets `bindkey -e` so the prompt keeps Emacs-style editing keys such as `Ctrl-A`, `Ctrl-E`, and Backspace
-- this is separate from `EDITOR` and `VISUAL`, which control which full-screen editor tools launch
+```sh
+./setup/apps.zsh   # install desktop apps via brew cask
+./setup/macos.zsh  # apply macOS system preferences
+./setup/init.zsh   # run the full setup flow
+```
 
-### Organizing commands
+---
 
-You do **not** need one file per command.
+## The Workflow
 
-A practical pattern is:
+### 1. Orient — where am I?
 
-- keep one file per domain (`git`, `dev`, `aliases`, `docker`, `k8s`, etc.)
-- group tiny aliases together in shared files
-- keep larger shell functions in domain files, with a short header comment per function
-- only split to one-command-per-file when a function becomes long, has tests/docs, or has collaborators
+You just opened a terminal, switched to a worktree, or resumed after lunch. Start here.
 
-`shell/init.zsh` already autoloads everything under `commands/**/*.zsh`, so the collection strategy is simply:
+```sh
+s       # ⚡ rich status: branch, worktree, stash, staged/unstaged, PR state, CI checks
+ctx     # ⚡ compact snapshot: time, user, dir, repo, branch, base, ahead/behind, PR, CI
+```
 
-1. create a domain file in `commands/`
-2. drop aliases/functions into that file
-3. source `.hgpa/shell/init.zsh` (or restart shell)
+For quick glances:
 
-If load order ever matters, use filename prefixes (for example `00-core.zsh`, `10-git.zsh`, `20-dev.zsh`) so glob ordering stays predictable.
+```sh
+gss     # git status --short
+gds     # git diff --stat
+gl      # git log
+glo     # git log --oneline
+```
 
-Alternatively, you can source individual files.
+### 2. Branch — start working
+
+Create a branch the standard way, or use worktrees for parallel work:
+
+```sh
+gcob feature-name           # git checkout -b
+gwc feature-name            # ⚡ create branch + linked worktree with auto-sanitized name
+gwc feature-name main       # ⚡ branch from a specific base
+```
+
+Switch between worktrees:
+
+```sh
+gws     # ⚡ fzf worktree switcher
+gwl     # git worktree list
+```
+
+### 3. Code
+
+This is the part where you write code. Use your editor, use an agent, pair — whatever works.
+
+```sh
+# launch an agent for the heavy lifting
+claude
+codex
+gemini
+```
+
+### 4. Review your changes
+
+Before committing, look at what you've done:
+
+```sh
+gss             # quick file-level summary
+gd              # git diff (unstaged)
+gdc             # git diff --cached (staged)
+gbd             # ⚡ diff vs base branch (auto-detects base)
+gbd --stat      # ⚡ just the file summary vs base
+```
+
+Preview what would be committed:
+
+```sh
+commit --draft  # ⚡ show files that would be staged, without committing
+```
+
+### 5. Commit
+
+```sh
+commit "fix: handle empty input"       # ⚡ stage all + commit with message
+echo "fix: handle empty input" | commit # ⚡ read message from stdin
+commit --ai                             # ⚡ generate message from diff via claude
+```
+
+Standard git shortcuts if you prefer manual staging:
+
+```sh
+gc      # git commit
+gcm     # git commit -m
+gca     # git commit --amend
+goops   # stage all (including untracked) + amend last commit silently
+```
+
+### 6. Push and open a PR
+
+```sh
+git push        # push to remote (no alias — be intentional)
+ghpr            # gh pr
+ghprv           # gh pr view
+```
+
+### 7. Get reviews
+
+Request an AI code review from your terminal:
+
+```sh
+review              # ⚡ pipe branch diff to claude for review
+review "security"   # ⚡ focus the review on a specific concern
+```
+
+Wait for automated reviews:
+
+```sh
+cw      # ⚡ poll PR until Copilot review lands (600s timeout)
+```
+
+Inspect review threads:
+
+```sh
+threads         # ⚡ show all review threads with comments on current PR
+threads 42      # ⚡ threads for a specific PR number
+```
+
+### 8. Iterate
+
+Address feedback, commit again, push again. Use `s` to check CI and review status between rounds.
+
+```sh
+s               # ⚡ see updated PR status, CI checks, review state
+gbd             # ⚡ verify full diff vs base still looks right
+commit --ai     # ⚡ commit the next round
+git push        # push
+```
+
+Rebase shortcuts if needed:
+
+```sh
+gr      # git rebase
+gri     # git rebase -i
+grc     # git rebase --continue
+gra     # git rebase --abort
+```
+
+### 9. Merge
+
+```sh
+merge   # ⚡ squash-merge PR with safety checks (unresolved threads, CI state),
+        #   then switch to default branch and pull
+```
+
+### 10. Hand off
+
+When you're done for the day or passing context to another session or agent:
+
+```sh
+handoff     # ⚡ build handoff block: context + recent commits + diff stat + TODOs
+            #   copies to clipboard automatically
+```
+
+---
 
 ## Agent configuration
 
-These shell commands are available in any interactive session. To make agents aware of them, add the following blurb to your global agent configuration files:
+These commands work in any interactive shell. To make AI agents aware of them, add this to your global agent config:
 
-**`~/.claude/CLAUDE.md`** (Claude Code) and **`~/AGENTS.md`** (Codex):
+**`~/.claude/CLAUDE.md`** (Claude Code) · **`~/AGENTS.md`** (Codex)
 
 ```markdown
 ## Shell commands (.hgpa)
@@ -96,62 +232,48 @@ Prefer these shell functions over raw git/gh equivalents:
 - `handoff` — build a session handoff block (context + commits + diff stat + TODOs) and copy to clipboard
 ```
 
-## Commands
+## Layout
 
-- `status` (`s`) is the primary re-entry command: repo, branch, worktree, stash count, linked worktrees, local changes, and PR status (including failing CI check names)
-- `copilotwait` (`cw`) polls the current PR until a Copilot review/comment appears or a timeout is reached
-- `context` (`ctx`) prints a compact environment snapshot for agents or handoff-style metadata
-- `handoff` (`hoff`, `ho`) builds a full session handoff block: context snapshot, recent commits, diff stat, and TODOs/FIXMEs; copies to clipboard
-- `review [focus]` pipes the current branch diff to `claude` for a code review; optional focus argument narrows the review
-- `commit` (`c`) stages all repo changes and commits from stdin
-  - `commit --draft` (`-d`) shows files that would be staged without committing
-  - `commit --ai` (`-a`) generates a commit message from the current diff via `claude`, confirms interactively, then commits
-- `doctor` checks all expected CLI tools are installed and prints their versions; `doctor --install` installs any missing tools
-
-## Git shortcuts
-
-- `gss` runs `git status --short`
-- `gds` runs `git diff --stat`
-- `commit "message"` stages all changes and commits with `-m "message"`
-- `echo "message" | commit` stages all changes and reads the commit message from stdin
-- `commit < message.txt` stages all changes and reads the commit message from a file via stdin
-
-## Shortcuts
-
-## Workflows
-
-```sh
-# return to a terminal and understand what this checkout is
-s
-
-# compact metadata snapshot for agent/handoff context
-ctx
-
-# quick git summaries
-gss
-gds
-
-# commit with an inline message
-commit "fix shell aliases"
-
-# commit from stdin
-echo "fix shell aliases" | commit
-
-# wait for Copilot review output on the current PR
-cw
-
-# inspect tool/app install state
-doctor
-
-# install any missing tools
-doctor --install
-
-# install apps
-./setup/apps.zsh
-
-# apply macOS defaults
-./setup/macos.zsh
-
-# run the full setup flow
-./setup/init.zsh
 ```
+shell/          # environment and bootstrap (sourced into session)
+  init.zsh      # sources shell/**/*.zsh and commands/**/*.zsh (excludes init.zsh, nvm-quick.zsh)
+  env.zsh       # EDITOR, VISUAL, locale
+  prompt.zsh    # git-aware prompt with status indicators
+  nvm/          # node version management
+commands/       # aliases and functions by domain
+  aliases.zsh   # navigation, file ops, system shortcuts
+  git.zsh       # git shortcuts and worktree helpers
+  dev.zsh       # status, commit, review, merge, doctor, handoff
+setup/          # machine setup scripts
+docs/           # additional documentation
+```
+
+### Adding commands
+
+One file per domain. Drop aliases and functions into a file under `commands/`, restart your shell. `shell/init.zsh` sources everything under `commands/**/*.zsh`.
+
+If load order matters, use filename prefixes: `00-core.zsh`, `10-git.zsh`, `20-dev.zsh`.
+
+## Shell behavior
+
+- `shell/init.zsh` sets `bindkey -e` — Emacs-style line editing (`Ctrl-A`, `Ctrl-E`, Backspace)
+- `EDITOR` and `VISUAL` (set in `shell/env.zsh`) control which full-screen editor tools launch — separate from prompt key bindings
+
+## Quick reference
+
+| Command | Description |
+|---|---|
+| `s` | rich status: branch, worktree, stash, changes, PR, CI |
+| `ctx` | compact environment snapshot |
+| `commit "msg"` | stage all + commit |
+| `commit --ai` | AI-generated commit message |
+| `commit --draft` | preview what would be staged |
+| `gbd` | diff vs auto-detected base branch |
+| `review [focus]` | AI code review via claude |
+| `cw` | poll for Copilot review |
+| `threads` | show PR review threads |
+| `merge` | squash-merge with safety checks |
+| `handoff` | session handoff block to clipboard |
+| `gwc name [base]` | create branch + worktree |
+| `gws` | fzf worktree switcher |
+| `doctor` | audit/install CLI tools |
