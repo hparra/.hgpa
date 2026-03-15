@@ -497,6 +497,59 @@ EOF
 }
 alias th=threads
 
+# merge: squash-merge the current PR, then switch to the default branch and pull
+# - warns and aborts if there are unresolved review threads
+# - warns if CI is not passing (requires confirmation to proceed)
+# Usage: merge
+merge() {
+  if ! command -v gh >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    echo "merge requires both gh and jq."
+    return 1
+  fi
+
+  local pr_json pr_number pr_url pr_state pr_ci pr_threads_raw unresolved
+  pr_json=$(PAGER=cat gh pr view --json number,url,state,reviewDecision,statusCheckRollup 2>/dev/null) || {
+    echo "merge: no pull request found for the current branch."
+    return 1
+  }
+
+  pr_number=$(jq -r '.number' <<< "$pr_json")
+  pr_url=$(jq -r '.url' <<< "$pr_json")
+  pr_state=$(jq -r '.state' <<< "$pr_json")
+  pr_ci=$(jq -r '[.statusCheckRollup[]? | .state] | if length == 0 then "none" elif all(. == "SUCCESS") then "passing" elif any(. == "FAILURE" or . == "ERROR") then "failing" else "pending" end' <<< "$pr_json")
+
+  if [[ "$pr_state" != "OPEN" ]]; then
+    echo "merge: PR #${pr_number} is ${pr_state}, not open."
+    return 1
+  fi
+
+  # check for unresolved threads
+  unresolved=$(_hgpa_pr_thread_counts "$pr_number" "$pr_url" 2>/dev/null | awk '{print $1}')
+  if [[ "${unresolved:-0}" -gt 0 ]]; then
+    echo "merge: ${unresolved} unresolved review thread(s) on PR #${pr_number}. Resolve them first."
+    return 1
+  fi
+
+  # warn if CI is not passing
+  if [[ "$pr_ci" != "passing" && "$pr_ci" != "none" ]]; then
+    echo "merge: CI is ${pr_ci} on PR #${pr_number}."
+    echo -n "Merge anyway? [y/N] "
+    local answer
+    read -r answer
+    [[ "$answer" != "y" && "$answer" != "Y" ]] && echo "Aborted." && return 0
+  fi
+
+  echo "Merging PR #${pr_number} (squash)…"
+  gh pr merge "$pr_number" --squash --delete-branch || return $?
+
+  # switch to default branch and pull
+  local default_branch
+  default_branch=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|refs/remotes/origin/||')
+  if [[ -n "$default_branch" ]]; then
+    git checkout "$default_branch" && git pull
+  fi
+}
+
 # context: print a compact environment snapshot for humans and agents
 # - includes time, user, current directory, and git metadata when available
 # - summarizes local changes, branch/base state, upstream tracking, and PR status
